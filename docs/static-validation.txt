@@ -1,0 +1,10 @@
+dashboard-card.yaml: PyYAML + ruamel.yaml PASS
+packages/dobby_scheduler.yaml: PyYAML + ruamel.yaml PASS
+custom_components/dobby_scheduler/services.yaml: PyYAML + ruamel.yaml PASS
+docs/frontend_test_results.json: JSON PASS
+custom_components/dobby_scheduler/manifest.json: JSON PASS
+custom_components/dobby_scheduler/strings.json: JSON PASS
+custom_components/dobby_scheduler/translations/en.json: JSON PASS
+Python compileall: PASS
+JavaScript node --check: PASS
+No live Home Assistant or hardware validation performed.

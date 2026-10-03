@@ -1,0 +1,39 @@
+enqueue:
+  name: Add room to today's queue
+  description: Add a cleanable Area without duplicates. An urgent request becomes next, without interrupting the current room.
+  fields:
+    area_id:
+      name: Home Assistant Area
+      required: true
+      selector:
+        area: {}
+    urgent:
+      name: Clean this room next
+      default: false
+      selector:
+        boolean: {}
+run:
+  name: Run today's queue now
+  description: Bypass the away delay, but retain the cleaning window and all hardware/mapping checks. Does not turn on daily automatic scheduling.
+  fields:
+    allow_home:
+      name: Permit this manually started run while someone is home
+      default: false
+      selector:
+        boolean: {}
+pause:
+  name: Pause and dock
+  description: Disable automatic scheduling and return the owned job to the dock without marking its room complete.
+reset:
+  name: Restore daily rooms
+  description: Replace today's list with dobby_daily Areas in default order. Refused while a job is active.
+retry:
+  name: Retry after checking Dobby
+  description: Clear a fault while docked. If cleaning was proved, retry dock service only; otherwise leave the room pending for a fresh clean.
+enable:
+  name: Set automatic scheduling
+  fields:
+    enabled:
+      required: true
+      selector:
+        boolean: {}

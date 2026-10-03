@@ -1,0 +1,7 @@
+# Optional bootstrap. Install the bundled custom_components/dobby_scheduler folder FIRST.
+# Place this in /config/packages/ if packages are enabled, then restart Home Assistant.
+# Alternatively skip this file and use Settings > Devices & services > Add integration
+# > Dobby Scheduler. Both routes create the same single integration instance.
+# Room maps, labels, order and schedules are configured in the card, not here.
+dobby_scheduler:
+  name: Dobby Scheduler

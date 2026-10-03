@@ -1,0 +1,13 @@
+{
+  "title": "Dobby Scheduler",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dobby room scheduler",
+        "description": "Creates a local room queue and dashboard controls. Automatic cleaning starts disabled. Configure the vacuum, labels and verified room mappings in the bundled card. No additional cloud account is used.",
+        "data": {"name": "Display name"}
+      }
+    },
+    "abort": {"already_configured": "Dobby Scheduler is already configured. Open its dashboard card to change settings."}
+  }
+}

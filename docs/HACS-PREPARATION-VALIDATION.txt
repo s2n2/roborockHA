@@ -1,0 +1,13 @@
+HACS repository preparation - 3 October 2026
+
+All YAML parsed, with duplicate keys rejected.
+All JSON parsed.
+All Python parsed.
+All 14 original non-manifest integration files are byte-for-byte unchanged, including scheduler code and JavaScript.
+Repository helper and strict metadata check passed with temporary example owner; unpublished placeholders restored afterwards.
+97 controller/adapter simulation tests passed in this preparation.
+Bundled JavaScript passed node --check.
+Repository metadata configured for https://github.com/s2n2/roborockHA.
+Not run: GitHub-hosted HACS validation, hassfest, actual HACS installation or a live Home Assistant/robot test.
+Publishing workflows require the uploaded public repository; their success is not claimed here.
+No GitHub repository was created, no release published, and no Home Assistant settings changed.
