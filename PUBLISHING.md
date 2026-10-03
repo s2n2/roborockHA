@@ -1,4 +1,4 @@
-# Publishing s2n2/roborockHA - Dobby Scheduler 0.1.2
+# Publishing s2n2/roborockHA - Dobby Scheduler 0.1.3
 
 The manifest is already configured for `https://github.com/s2n2/roborockHA` and
 code owner `@s2n2`. Upload the CONTENTS of this bundle to the repository root.
@@ -9,7 +9,7 @@ Do not upload Home Assistant backups, credentials, config or .storage files.
 
 Run the GitHub validation workflow and review any errors. This local patch was
 not run inside Home Assistant and has not been published to your repository.
-After supervised checking, create a new GitHub release with tag `v0.1.2`.
+After supervised checking, create a new GitHub release with tag `v0.1.3`.
 Use a new tag; do not move the existing `v0.1.0` tag. For an experimental release,
 mark it as a pre-release and enable pre-release updates for this repository in
 HACS as needed. No ZIP release asset is required by this hacs.json.
@@ -23,12 +23,12 @@ Do not delete helpers or create a second integration entry. For a new install,
 add Dobby Scheduler in Settings > Devices & services after restarting.
 
 Refresh the browser/app and add the Dobby Scheduler card from Add card > By card.
-The module is automatically loaded by the integration in version 0.1.2.
+The module is automatically loaded by the integration in version 0.1.3.
 Remove any old MANUAL Dobby resource entry, not the dashboard card itself.
 The automatic resource URL is:
 
 ```text
-/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.2
+/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.3
 ```
 
 Manual card YAML still works:
@@ -40,7 +40,7 @@ title: Dobby
 
 ## Changes
 
-See [UPGRADE_0.1.2.md](UPGRADE_0.1.2.md) for the registry-startup fix.
+See [UPGRADE_0.1.3.md](UPGRADE_0.1.3.md) for the registry-startup fix.
 
 ### Earlier integration-loading fixes
 

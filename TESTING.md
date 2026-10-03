@@ -99,3 +99,11 @@ The completed-clean adapter reads internal cached Roborock coordinator data. If 
 13. Verify children/guest/babysitter presence and your motion-alarm policy. Only then enable unattended automatic scheduling.
 
 Keep the robot within reach during first testing. If it acts unexpectedly, use its physical stop/pause control or the Roborock app, then disable the scheduler. Run only one controller at a time.
+
+
+## 0.1.3 responsive UI regressions
+
+See `docs/UI-0.1.3-VALIDATION.md`. The earlier scheduling test scope remains
+unchanged. New layout tests specifically cover narrow columns within a wide
+desktop viewport, not just mobile screen sizes. The 0.1.2 registration regressions
+were rerun, with only version assertions updated.

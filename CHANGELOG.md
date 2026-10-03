@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.3 - Responsive dashboard and setup
+
+- Card-width container queries: narrow desktop columns receive the same careful
+  layout as mobile cards, without relying only on browser viewport breakpoints.
+- Full-width next-room summary on narrow cards; completion and battery below it.
+- Consistent buttons, selected-room tiles, typography and empty states.
+- Compact old-automation warning with an explicit Review action.
+- No redundant empty execution section before rooms are configured.
+- Accessible automatic-when-away switch and a quieter footer.
+- Popup header/tabs stay visible while the form scrolls; room dropdown on small
+  displays; settings divided into Robot & presence and Schedule & gestures.
+- Automatic card height rather than a forced ten-row Sections layout.
+- Preserve the 0.1.2 startup registration fix and all existing backend behaviour.
+- Version/cache key bumped. No new Python dependencies, entities or migration.
+
+
 ## 0.1.2 - Wait for Home Assistant frontend registry
 
 - Defer both the custom-card CLASS declaration and custom-element registration

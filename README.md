@@ -1,4 +1,17 @@
-# Dobby Scheduler 0.1.2
+# Dobby Scheduler 0.1.3
+
+## 0.1.3: responsive card and setup layout
+
+The dashboard now adapts to the width of its card column, including narrow
+columns on desktop dashboards. The next-room field no longer squeezes the
+completion and battery values. Onboarding, action buttons, room tiles and the
+automatic switch have consistent spacing. The setup popup keeps its header/tabs
+visible, uses a room dropdown on smaller screens and groups its settings.
+
+This is a presentation update. The 0.1.2 card-registration bootstrap is retained.
+Scheduler behaviour, room mappings, storage and entity IDs are unchanged.
+See `UPGRADE_0.1.3.md` and `docs/UI-0.1.3-VALIDATION.md`.
+
 
 A label-driven, room-by-room Roborock scheduler for Home Assistant, with a native ordered to-do queue and a self-contained dashboard card.
 
@@ -9,9 +22,9 @@ A label-driven, room-by-room Roborock scheduler for Home Assistant, with a nativ
 This is an initial, locally tested build. The Python controller and browser card were tested with simulated inputs, not inside a running Home Assistant installation or on a physical robot. It is not an official Home Assistant/Roborock product and this repository is not automatically included in the HACS default catalogue.
 
 
-## 0.1.2 card startup fix
+## 0.1.3 card startup fix
 
-Upgrading from 0.1.1: see [UPGRADE_0.1.2.md](UPGRADE_0.1.2.md). The bundled
+Upgrading from 0.1.1: see [UPGRADE_0.1.3.md](UPGRADE_0.1.3.md). The bundled
 card now waits for Home Assistant's root element before defining the card class
 and registering it. This avoids the extra-module/scoped-registry startup race
 where the picker entry exists but `customElements.get()` returns undefined.
@@ -82,7 +95,7 @@ This release guards against duplicate picker registration during the transition.
 The automatic module is:
 
 ```text
-/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.2
+/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.3
 ```
 
 This is an integration-provided frontend module, so it need not appear as a
