@@ -1,5 +1,31 @@
 # Validation and first-run acceptance
 
+## 0.1.1 visibility/loading regression results
+
+The v0.1.1 fix was built from the previously supplied HACS-ready v0.1.0 archive.
+The live s2n2/roborockHA repository could not be fetched during this session.
+
+- 107 Python simulations passed: 97 existing engine/adapter tests plus 10 new
+  integration-bootstrap tests.
+- The new tests check the service classification, frontend dependency, versioned
+  module URL, actual static asset path, once-only registration, existing runtime
+  data retention, optional YAML import and reuse of the config-entry identifier.
+- Node's card-registration harness passed: the card registers in the picker,
+  has a stub config, tolerates duplicate module URLs and preserves other cards.
+- 21 existing Chromium UI checks passed, with no browser JavaScript exceptions.
+- Python compilation, JS syntax, JSON parsing, both YAML parsers, and the offline
+  repository checker passed.
+- Byte comparison confirmed engine.py, todo.py, sensor.py, switch.py, api.py and
+  config_flow.py are unchanged. Controller changes are release metadata only.
+
+These are local simulations, not a live Home Assistant boot, a HACS/hassfest
+result or a robot test. After updating, restart HA and refresh the browser, check
+Dobby in Integrations and the card picker, then verify the existing settings and
+queue before enabling automatic cleaning.
+
+The original v0.1.0 results and hardware-acceptance checklist follow.
+
+
 Build: 0.1.0, 3 October 2026.
 
 ## Checks completed in the build environment

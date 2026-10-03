@@ -17,6 +17,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .const import VERSION
 from .engine import Engine, GestureDetector, DEFAULTS, resolve_mode, validate_segments, number, clock_minutes, cleaning_day
 
 DOMAIN = "dobby_scheduler"
@@ -442,7 +443,7 @@ this record through its coordinator. Any incompatible layout fails closed.
             jobs.append({**j, "name": r.get("name", j["area_id"]), "mode": r.get("mode"),
                          "segments": r.get("segments", []), "map_name": r.get("map_name", ""),
                          "priority": r.get("priority", 100), "mapping_error": r.get("mapping_error", "")})
-        out = {"version": "0.1.0", "entry_id": self.entry.entry_id, "name": self.entry.title,
+        out = {"version": VERSION, "entry_id": self.entry.entry_id, "name": self.entry.title,
                "enabled": self.engine.enabled, "manual": self.engine.manual,
                "active": deepcopy(self.engine.active), "reason": self.engine.wait_reason,
                "fault": self.engine.fault, "day": self.engine.day, "jobs": jobs,

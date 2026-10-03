@@ -1,5 +1,4 @@
-# First add the JavaScript resource as a JavaScript module:
-# /dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.0
-# Then paste these two lines into a Manual dashboard card.
+# Dobby Scheduler 0.1.1 loads its bundled card automatically.
+# Restart Home Assistant after updating; refresh the browser/app before adding.
 type: custom:dobby-scheduler-card
 title: Dobby

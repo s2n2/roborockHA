@@ -2,6 +2,7 @@
 from homeassistant.core import callback
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.device_registry import DeviceInfo
+from .const import VERSION
 from .controller import DOMAIN
 
 class DobbyEntity(Entity):
@@ -15,7 +16,7 @@ class DobbyEntity(Entity):
         self.entity_id = f"{domain}.dobby_scheduler_{key}"
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, controller.entry.entry_id)},
                                             name=controller.entry.title, manufacturer="Dobby Scheduler",
-                                            model="Room queue", sw_version="0.1.0")
+                                            model="Room queue", sw_version=VERSION)
         self.key = key
 
     async def async_added_to_hass(self):

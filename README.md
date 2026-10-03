@@ -1,4 +1,4 @@
-# Dobby Scheduler 0.1.0
+# Dobby Scheduler 0.1.1
 
 A label-driven, room-by-room Roborock scheduler for Home Assistant, with a native ordered to-do queue and a self-contained dashboard card.
 
@@ -34,63 +34,67 @@ The integration does not establish a new robot connection or request credentials
 
 ## Install with HACS (custom repository)
 
-Repository owners: first set the manifest username/URLs and upload the repository
-as explained in [PUBLISHING.md](PUBLISHING.md).
+Repository: `https://github.com/s2n2/roborockHA`, category **Integration**.
 
-1. HACS > three dots > Custom repositories: add this repository URL with type
-   **Integration**, then find Dobby Scheduler and Download.
-2. Restart Home Assistant, then Settings > Devices & services > Add integration
-   > Dobby Scheduler. Do not add a second entry if one already exists.
-3. Add `/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.0` once as a
-   JavaScript module in dashboard Resources.
-4. Add the Manual card shown below, and configure it through the gear button.
+1. Download Dobby Scheduler in HACS and restart Home Assistant.
+2. For a NEW installation only, open Settings > Devices & services > Add
+   integration > Dobby Scheduler. Do not add a second entry when upgrading.
+3. Refresh the Home Assistant browser/app completely. The integration loads its
+   bundled JavaScript automatically using Home Assistant's frontend module API.
+   It does not edit your dashboard or require a manual Resources entry.
+4. Edit a dashboard, choose Add card > By card, and search for **Dobby Scheduler**.
+   Alternatively use the Manual card below.
+5. Open the card's gear button to configure rooms and the robot. Keep automatic
+   scheduling off until supervised acceptance checks pass.
 
 ```yaml
 type: custom:dobby-scheduler-card
 title: Dobby
 ```
 
-The dashboard JavaScript is bundled inside the integration, so it updates with
-it. This build does not automatically register the dashboard resource. HACS does
-not copy the optional root package or dashboard YAML; neither is needed for
-UI-based installation. Keep automatic scheduling off during initial checks.
+Dobby now uses integration type `service`, so it belongs in the Integrations
+screen rather than the Helpers screen. Existing config entries and entity IDs
+are reused; the queue and settings are not reset by this change.
+
+## Upgrading from 0.1.0
+
+Back up Home Assistant and pause Dobby's automatic scheduler before updating.
+Update the files through HACS and restart Home Assistant fully. Reloading the
+integration alone will not reread its manifest classification.
+
+Do NOT delete Dobby's existing entry or its queue/helpers and do not add another
+entry. After the restart, refresh the browser/app and reopen Add card. If you
+previously added a Dobby resource under Settings > Dashboards > Resources,
+remove that one manual Dobby resource entry: version 0.1.1 loads it automatically.
+Do not remove other cards' resources or a Dobby card already on your dashboard.
+This release guards against duplicate picker registration during the transition.
+
+The automatic module is:
+
+```text
+/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.1
+```
+
+This is an integration-provided frontend module, so it need not appear as a
+stored row in the dashboard Resources editor. The URL is also useful for checking
+that the integration serves its JavaScript; open it on your own Home Assistant
+address. A 404 means the HTTP path is not loaded; review Home Assistant logs.
 
 ## Install manually
 
-1. Back up Home Assistant. Copy `custom_components/dobby_scheduler/` into:
+1. Copy `custom_components/dobby_scheduler/` into
+   `/config/custom_components/dobby_scheduler/`, with `manifest.json` directly
+   inside that directory, and restart Home Assistant.
+2. For a new installation, use Settings > Devices & services > Add integration >
+   Dobby Scheduler. Alternatively, when packages are already enabled, copy
+   `packages/dobby_scheduler.yaml` to `/config/packages/` before restarting.
+   Use ONE setup route, not both. Existing installations keep their current entry.
+3. Refresh the browser/app, add the Dobby Scheduler card shown above, and configure
+   it using the gear button. No extra manual resource entry is needed.
 
-   ```text
-   /config/custom_components/dobby_scheduler/
-   ```
-
-   Confirm that `manifest.json` is directly inside that directory.
-
-2. Choose **one** setup route:
-
-   **Package route:** if `homeassistant: packages:` is already configured, copy `packages/dobby_scheduler.yaml` to `/config/packages/dobby_scheduler.yaml`, check configuration, and restart Home Assistant. It imports the single scheduler entry.
-
-   **UI route:** do not copy the package file. Restart Home Assistant, then use Settings > Devices & services > Add integration > Dobby Scheduler.
-
-   If enabling packages for the first time, merge `packages: !include_dir_named packages` into the existing `homeassistant:` section. Never create a duplicate `homeassistant:` key or overwrite its other settings.
-
-3. Add this dashboard resource as a **JavaScript module**:
-
-   ```text
-   /dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.0
-   ```
-
-   Use the dashboard Resources editor (enable Advanced Mode on your profile if necessary). YAML-mode dashboards can add it under their existing `lovelace.resources` configuration instead. Do not configure the same resource twice. Refresh the browser after adding it.
-
-4. Add a Manual card with the contents of `dashboard-card.yaml`:
-
-   ```yaml
-   type: custom:dobby-scheduler-card
-   title: Dobby
-   ```
-
-5. Open the card's gear button and complete the setup below. Do not enable Automatic when away until the mapping and completion checks have passed.
-
-Room mappings, labels, order and connection settings need no subsequent YAML edits. A completely new room needs one-time Area/mapping confirmation in the pop-up. A replacement wall switch in an already mapped room needs only the correct Area and gesture label.
+Room mappings, labels, order and connection settings need no subsequent YAML edits.
+A new room needs one-time Area/mapping confirmation in the pop-up. A replacement
+wall switch in an already mapped room needs its correct Area and gesture label.
 
 ## First setup in the pop-up
 
