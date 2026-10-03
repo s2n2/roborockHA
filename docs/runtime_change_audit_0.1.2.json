@@ -1,0 +1,26 @@
+{
+  "baseline": "Supplied roborockHA_v0.1.1.zip; live repo unavailable",
+  "runtime_files_changed": [
+    "custom_components/dobby_scheduler/const.py",
+    "custom_components/dobby_scheduler/manifest.json",
+    "custom_components/dobby_scheduler/frontend/dobby-scheduler-card.js"
+  ],
+  "runtime_files_identical": [
+    "custom_components/dobby_scheduler/engine.py",
+    "custom_components/dobby_scheduler/__init__.py",
+    "custom_components/dobby_scheduler/sensor.py",
+    "custom_components/dobby_scheduler/controller.py",
+    "custom_components/dobby_scheduler/todo.py",
+    "custom_components/dobby_scheduler/entity.py",
+    "custom_components/dobby_scheduler/services.yaml",
+    "custom_components/dobby_scheduler/config_flow.py",
+    "custom_components/dobby_scheduler/strings.json",
+    "custom_components/dobby_scheduler/compat.py",
+    "custom_components/dobby_scheduler/switch.py",
+    "custom_components/dobby_scheduler/api.py",
+    "custom_components/dobby_scheduler/translations/en.json",
+    "custom_components/dobby_scheduler/brand/icon.png",
+    "custom_components/dobby_scheduler/brand/icon_dark.png",
+    "custom_components/dobby_scheduler/brand/README.md"
+  ]
+}

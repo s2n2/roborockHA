@@ -1,0 +1,28 @@
+{
+  "checks_passed": 21,
+  "checks": [
+    "dynamic room picker",
+    "next room shown",
+    "add room",
+    "promote room",
+    "queue reorder",
+    "setup popup",
+    "fetched segment choices",
+    "mapping edit clears confirmation",
+    "save room metadata",
+    "popup room selection",
+    "popup priority request",
+    "popup errors visible in modal",
+    "draft survives status refresh",
+    "settings persist command",
+    "label-only switch setup",
+    "built-in label instructions",
+    "completion diagnostics",
+    "mobile document no horizontal overflow",
+    "mobile popup no horizontal overflow",
+    "dynamic room name escaped",
+    "no browser JavaScript exceptions"
+  ],
+  "browser_errors": [],
+  "environment": "Headless Chromium with mocked Home Assistant backend; not an installed HA dashboard"
+}

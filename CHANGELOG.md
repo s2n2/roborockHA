@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 - Wait for Home Assistant frontend registry
+
+- Defer both the custom-card CLASS declaration and custom-element registration
+  until Home Assistant has defined `home-assistant`, after its scoped registry
+  polyfill is imported. Re-read the current registry after waiting.
+- Publish picker metadata only after registration; retain duplicate-load guards.
+- Add a versioned console message and `window.dobbySchedulerCardStatus` to make
+  waiting, successful registration and failure distinguishable.
+- Add 11 Node regression simulations and 5 Chromium startup checks, including
+  reproducing the previous registration pattern's missing-element symptom.
+- Keep backend scheduling, storage, helpers, map handling and queue logic unchanged.
+- Tested with simulated registries/backends, not a live Home Assistant or robot.
+
 ## 0.1.1 - Integration visibility and bundled-card loading
 
 - Classify Dobby as a service, not a helper.

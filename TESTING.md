@@ -1,3 +1,30 @@
+# 0.1.2 validation update
+
+The latest checks are 107 passing Python tests, 11 passing Node registration
+regressions, 21 existing UI checks and 5 additional Chromium startup checks.
+The old immediate-registration pattern is reproduced with picker metadata
+present and the constructor absent after a simulated registry replacement.
+The new code is checked before, during and after frontend initialisation, with
+both single and duplicate imports. Real Chromium constructs the delayed card.
+
+These are simulated registries/backends, not the real HA scoped-registry
+polyfill, a live HA installation, a HACS install or a hardware test. Previously
+listed full-system limitations still apply. See UPGRADE_0.1.2.md.
+
+Commands added/updated:
+
+```sh
+node tests/check_card_registration.cjs
+python tests/test_card_startup_browser.py
+python tests/test_frontend.py
+python -m pytest -q tests/test_engine.py tests/test_adapter.py tests/test_setup.py
+```
+
+Browser tests require Playwright and an installed Chromium executable. The
+Node regressions run in the existing GitHub Actions validation job.
+
+---
+
 # Validation and first-run acceptance
 
 ## 0.1.1 visibility/loading regression results

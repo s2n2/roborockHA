@@ -87,7 +87,7 @@ def test_manifest_requires_frontend():
 def test_release_and_domain(bootstrap):
     module, hass, calls, tasks = bootstrap
     assert module.DOMAIN == 'dobby_scheduler'
-    assert MANIFEST['version'] == '0.1.1'
+    assert MANIFEST['version'] == '0.1.2'
     assert module.CARD_URL.endswith('?v=' + MANIFEST['version'])
 
 
@@ -103,7 +103,7 @@ def test_serves_actual_bundled_card(bootstrap):
 def test_loads_module_without_lovelace_storage(bootstrap):
     module, hass, calls, tasks = bootstrap
     asyncio.run(module.async_setup(hass, {}))
-    assert calls.modules == [('/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.1', False)]
+    assert calls.modules == [('/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.2', False)]
     assert 'lovelace' not in hass.data
     assert 'lovelace_data' not in hass.data
 

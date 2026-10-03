@@ -1,0 +1,12 @@
+{
+  "checks_passed": 5,
+  "checks": [
+    "reproduces original registration pattern losing visibility after registry replacement",
+    "cold-load module before replacement: registers late and constructs with post-swap HTMLElement",
+    "module after replacement but before HA root: registers when root is defined",
+    "warm-load and duplicate module: constructor works and picker remains unique",
+    "two simultaneous pre-root imports: one usable card definition"
+  ],
+  "browser_errors": [],
+  "scope": "Real headless Chromium with a simulated HA registry swap, not the real HA scoped registry polyfill or a live HA/robot test."
+}
