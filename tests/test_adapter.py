@@ -94,7 +94,7 @@ def test_invalid_maps_not_invented(adapter,response):
 
 def test_create_labels_idempotent(adapter):
     m,c,h,calls=adapter;run(c,'create_labels');run(c,'create_labels')
-    assert len(c.label_ids())==6
+    assert len(c.label_ids())==8
 
 
 def test_room_save_preserves_unrelated_labels(adapter):

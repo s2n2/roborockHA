@@ -11,12 +11,12 @@ e=importlib.util.module_from_spec(spec);spec.loader.exec_module(e)
 SETTINGS=dict(e.DEFAULTS, vacuum_entity='vacuum.test', presence_entity='binary_sensor.someone_home',
  mode_entity='select.test_cleaning_mode', battery_entity='sensor.test_battery', error_entity='sensor.test_vacuum_error',
  map_entity='select.test_selected_map', empty_entity='switch.test_dock_dust_emptying', wash_entity='switch.test_dock_mop_washing')
-LABELS={k:k for k in ('dobby_cleanable','dobby_daily','dobby_vacuum','dobby_vacuum_mop','dobby_mop','dobby_room_toggle')}
+LABELS={k:k for k in ('dobby_cleanable','dobby_daily','dobby_vacuum','dobby_vacuum_mop','dobby_mop','dobby_room_toggle','dobby_room_double_toggle','dobby_room_press')}
 ROOMS=[]
 for area,name,segment,mode,priority in [('kitchen','Kitchen',17,'vac_and_mop',10),('hallway_tiles','Hallway tiles',24,'vac_and_mop',20),('bathroom','Bathroom',19,'vac_and_mop',30),('lounge','Lounge',16,'vacuum',50),('bedroom','Bedroom',26,'vacuum',60)]:
  ROOMS.append(dict(area_id=area,name=name,cleanable=True,daily=True,mode=mode,mode_label='dobby_vacuum_mop' if mode=='vac_and_mop' else 'dobby_vacuum',mode_warning='',priority=priority,segments=[segment],map_flag=0,map_name='Main map',verified=True,mapping_error=''))
 JOBS=[dict(uid=r['area_id'],area_id=r['area_id'],name=r['name'],mode=r['mode'],segments=r['segments'],map_name='Main map',status='needs_action',source='daily',note='',reason='',urgent=False) for r in ROOMS[:3]]
-DATA=dict(version='0.1.3',entry_id='demo',name='Dobby Scheduler',enabled=False,manual=False,active=None,reason='Scheduler disabled',fault='',day='2026-10-03',jobs=JOBS,rooms=ROOMS,maps=[dict(flag=0,name='Main map',rooms={str(r['segments'][0]):r['name'] for r in ROOMS})],maps_at=1790988000,telemetry=dict(home=True,battery=84,vacuum='docked',map_name='Main map',record_supported=True,legacy=[]),backend='Simulated successful-clean record adapter',labels=LABELS,toggle_entities={'binary_sensor.kitchen_wall_input':'kitchen'},entities={'queue':'todo.dobby_scheduler_queue'},log=[dict(at=1790988000,message='Daily rooms restored')],settings=SETTINGS,candidates=[dict(entity_id='vacuum.test',name='Robot',state='docked',options=[]),dict(entity_id='binary_sensor.kitchen_wall_input',name='Kitchen wall input',state='off',options=[])])
+DATA=dict(version='0.1.4',entry_id='demo',name='Dobby Scheduler',enabled=False,manual=False,active=None,reason='Scheduler disabled',fault='',day='2026-10-03',jobs=JOBS,rooms=ROOMS,maps=[dict(flag=0,name='Main map',rooms={str(r['segments'][0]):r['name'] for r in ROOMS})],maps_at=1790988000,telemetry=dict(home=True,battery=84,vacuum='docked',map_name='Main map',record_supported=True,legacy=[]),backend='Simulated successful-clean record adapter',labels=LABELS,toggle_entities={'binary_sensor.kitchen_wall_input':'kitchen'},entities={'queue':'todo.dobby_scheduler_queue'},log=[dict(at=1790988000,message='Daily rooms restored')],settings=SETTINGS,candidates=[dict(entity_id='vacuum.test',name='Robot',state='docked',options=[]),dict(entity_id='binary_sensor.kitchen_wall_input',name='Kitchen wall input',state='off',options=[])])
 MOCK=r"""
 window.commands=[];window.demo=DATA;window.failNext=false;
 customElements.define('home-assistant',class extends HTMLElement{});
@@ -34,12 +34,12 @@ window.fakeHass={user:{is_admin:true},callWS:async msg=>{
  if(msg.action==='settings')Object.assign(demo.settings,p);
  if(msg.action==='move'){const j=demo.jobs.find(j=>j.uid===p.uid);demo.jobs=demo.jobs.filter(j=>j.uid!==p.uid);demo.jobs.splice(p.previous_uid==null?0:demo.jobs.findIndex(j=>j.uid===p.previous_uid)+1,0,j);}
  if(msg.action==='save_room'){const r=demo.rooms.find(r=>r.area_id===p.area_id);Object.assign(r,p);}
- if(msg.action==='set_toggle'){if(p.enabled)demo.toggle_entities[p.entity_id]='kitchen';else delete demo.toggle_entities[p.entity_id];}
+ if(msg.action==='set_gesture'){demo.gesture_entities=demo.gesture_entities||{};if(p.enabled){demo.toggle_entities[p.entity_id]='kitchen';demo.gesture_entities[p.entity_id]={area_id:'kitchen',label:p.label,event_type:p.event_type||''};}else{delete demo.toggle_entities[p.entity_id];delete demo.gesture_entities[p.entity_id];}}
  if(msg.action==='create_labels')demo.labels=LABELS;
  return {ok:true};
 }};
 """.replace('DATA',json.dumps(DATA),1).replace('LABELS',json.dumps(LABELS))
-HTML='''<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#edf3f4;font-family:Arial,sans-serif;color:#17383c}main{max-width:640px;margin:24px auto;padding:0 10px}.preview{font-size:11px;letter-spacing:1px;color:#637f86;margin:0 0 12px;text-align:center}ha-card{display:block}@media(max-width:600px){main{margin:12px auto;}}</style></head><body><main><div class="preview">SIMULATED PREVIEW · DOBBY SCHEDULER 0.1.3</div><dobby-scheduler-card></dobby-scheduler-card></main></body></html>'''
+HTML='''<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#edf3f4;font-family:Arial,sans-serif;color:#17383c}main{max-width:640px;margin:24px auto;padding:0 10px}.preview{font-size:11px;letter-spacing:1px;color:#637f86;margin:0 0 12px;text-align:center}ha-card{display:block}@media(max-width:600px){main{margin:12px auto;}}</style></head><body><main><div class="preview">SIMULATED PREVIEW · DOBBY SCHEDULER 0.1.4</div><dobby-scheduler-card></dobby-scheduler-card></main></body></html>'''
 
 def run_ui_tests():
  checks=[];errors=[];out=ROOT/'docs'/'previews';out.mkdir(parents=True,exist_ok=True)
@@ -75,7 +75,7 @@ def run_ui_tests():
   assert page.locator('[data-cfg="away_minutes"]').input_value()=='12';checks.append('draft survives status refresh')
   page.locator('[data-action="save-settings"]').click();assert page.evaluate('demo.settings.away_minutes')==12;checks.append('settings persist command')
   page.locator('[data-action="tab"][data-id="switches"]').click();page.locator('#toggle-choice').fill('binary_sensor.kitchen_wall_input');page.locator('[data-action="add-toggle"]').click()
-  assert page.evaluate("commands.at(-1).action")=='set_toggle';checks.append('label-only switch setup')
+  assert page.evaluate("commands.at(-1).action")=='set_gesture';checks.append('label-only switch setup')
   page.locator('[data-action="tab"][data-id="help"]').click();assert 'dobby_vacuum_mop' in page.locator('dialog').inner_text();checks.append('built-in label instructions')
   page.locator('[data-action="tab"][data-id="diagnostics"]').click();assert 'Simulated successful-clean' in page.locator('dialog').inner_text();checks.append('completion diagnostics')
   page.locator('[data-action="close"]').click();page.set_viewport_size({'width':390,'height':844})

@@ -17,6 +17,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .gestures import (GESTURE_LABELS, PRESS_ALIASES, STATE_DOMAINS, PRESS_DOMAINS, PressDetector, resolve_gesture)
 from .const import VERSION
 from .engine import Engine, GestureDetector, DEFAULTS, resolve_mode, validate_segments, number, clock_minutes, cleaning_day
 
@@ -28,7 +29,9 @@ LABELS = {
     "dobby_vacuum": "Vacuum only. Use just one Dobby mode label on each Area.",
     "dobby_vacuum_mop": "Vacuum and mop. Use just one Dobby mode label on each Area.",
     "dobby_mop": "Mop only. Use just one Dobby mode label on each Area.",
-    "dobby_room_toggle": "Four on/off changes in two seconds queue this entity's Area next. Label ONE physical input entity, not its mirrored light as well.",
+    "dobby_room_toggle": "One full on/off cycle (two transitions) queues this entity's Area next.",
+    "dobby_room_double_toggle": "Two full on/off cycles (four transitions) queue this entity's Area next.",
+    "dobby_room_press": "A single button press or rising edge queues this entity's Area next; Locate acknowledges it.",
 }
 LEGACY_NAMES = {
     "Dobby - Clean daily when noone is home", "Dobby - Go back to dock when we arrive home",
@@ -87,6 +90,11 @@ class DobbyController:
         self.rooms = {}
         self.toggle_entities = {}
         self.gestures = GestureDetector()
+        self.presses = PressDetector()
+        self.gesture_entities = {}
+        self.gesture_issues = []
+        self.gesture_options = {}
+        self.started_at = time.time()
         self.listeners = set()
         self.unsubs = []
         self.lock = asyncio.Lock()
@@ -104,6 +112,7 @@ class DobbyController:
         saved = await self.store.async_load() or {}
         self.settings.update({k: v for k, v in saved.get("settings", {}).items() if k in DEFAULTS})
         self.room_config = saved.get("rooms", {})
+        self.gesture_options = saved.get("gesture_options", {})
         self.maps, self.maps_at = saved.get("maps", []), saved.get("maps_at")
         self.engine = Engine(saved.get("engine"))
         self.refresh_registry()
@@ -198,13 +207,40 @@ class DobbyController:
                     other["mapping_error"] = f"Segment {n} is also assigned to {r['name']}"
                 used[key] = r["area_id"]
         self.toggle_entities = {}
+        previous_gestures = self.gesture_entities
+        self.gesture_entities = {}
+        self.gesture_issues = []
+        label_reg = lr.async_get(self.hass)
+        aliases = {alias: item.label_id for alias in PRESS_ALIASES
+                   if (item := label_reg.async_get_label(alias) or label_reg.async_get_label_by_name(alias))}
         for e in entities.entities.values():
-            if e.disabled_by or labels.get("dobby_room_toggle") not in e.labels:
+            if e.disabled_by:
                 continue
-            if e.entity_id.split(".")[0] not in ("switch", "light", "binary_sensor", "input_boolean"):
+            applied = {k for k, v in {**labels, **aliases}.items() if v in e.labels}
+            mode, problem = resolve_gesture(applied)
+            if problem:
+                self.gesture_issues.append({"entity_id": e.entity_id, "message": problem})
+                continue
+            if not mode:
+                continue
+            domain = e.entity_id.split(".")[0]
+            if domain not in (PRESS_DOMAINS if mode == "dobby_room_press" else STATE_DOMAINS):
+                self.gesture_issues.append({"entity_id": e.entity_id, "message": "Entity type cannot provide this gesture"})
                 continue
             device = devices.async_get(e.device_id) if e.device_id else None
-            self.toggle_entities[e.entity_id] = e.area_id or (device.area_id if device else None)
+            area = e.area_id or (device.area_id if device else None)
+            if not area or not self.rooms.get(area, {}).get("cleanable"):
+                self.gesture_issues.append({"entity_id": e.entity_id, "message": "Assign a cleanable Home Assistant Area"})
+            spec = {"area_id": area, "label": mode,
+                    "event_type": self.gesture_options.get(e.entity_id, {}).get("event_type", "")}
+            self.gesture_entities[e.entity_id] = spec
+            self.toggle_entities[e.entity_id] = area  # Retained for older card clients.
+            if previous_gestures.get(e.entity_id) != spec:
+                self.gestures.windows.pop(e.entity_id, None)
+        for entity in set(previous_gestures) - set(self.gesture_entities):
+            self.gestures.windows.pop(entity, None)
+            self.gestures.cooldowns.pop(entity, None)
+            self.presses.cooldowns.pop(entity, None)
         self.registry_revision += 1
 
     @callback
@@ -217,12 +253,25 @@ class DobbyController:
     def _state_changed(self, event):
         entity = event.data.get("entity_id")
         old, new = event.data.get("old_state"), event.data.get("new_state")
-        if entity in self.toggle_entities and old and new:
-            if self.gestures.feed(entity, old.state, new.state, time.monotonic(),
-                                 self.settings["gesture_seconds"], self.settings["gesture_cooldown"],
-                                 automation=bool(new.context.parent_id),
-                                 reject_automation=self.settings["reject_automation_context"]):
-                self.hass.async_create_task(self._gesture(entity))
+        spec = self.gesture_entities.get(entity)
+        if spec and old and new:
+            context = getattr(new, "context", None)
+            automation = bool(getattr(context, "parent_id", None))
+            if getattr(context, "id", None) in self.own_contexts:
+                automation = True
+            if spec["label"] == "dobby_room_press":
+                fired = self.presses.feed(entity, old.state, new.state, new.attributes,
+                    time.monotonic(), time.time(), self.started_at,
+                    cooldown=self.settings["gesture_cooldown"], automation=automation,
+                    reject_automation=self.settings["reject_automation_context"],
+                    event_type=spec.get("event_type", ""))
+            else:
+                fired = self.gestures.feed(entity, old.state, new.state, time.monotonic(),
+                    self.settings["gesture_seconds"], self.settings["gesture_cooldown"],
+                    automation=automation, reject_automation=self.settings["reject_automation_context"],
+                    transitions=2 if spec["label"] == "dobby_room_toggle" else 4)
+            if fired:
+                self.hass.async_create_task(self._gesture(entity, dict(spec)))
         watched = {v for k, v in self.settings.items() if k.endswith("_entity") and isinstance(v, str)}
         watched.update(self.settings["water_problem_entities"] + self.settings["blocking_entities"])
         if entity in watched or (entity or "").startswith("automation."):
@@ -250,24 +299,41 @@ class DobbyController:
             await self.persist()
         self.kick()
 
-    async def _gesture(self, entity):
-        area = self.toggle_entities.get(entity)
+    async def _gesture(self, entity, captured=None):
         async with self.lock:
+            if self.stopped:
+                return
+            spec = self.gesture_entities.get(entity)
+            # Re-check after the async task acquires the lock: labels can change.
+            if not spec or (captured is not None and spec != captured):
+                return
+            area = spec["area_id"]
             if not area or not self.rooms.get(area, {}).get("cleanable"):
                 self.engine.note(f"Ignored gesture on {entity}: no cleanable Area", time.time())
                 await self.persist()
                 self.publish()
                 return
-            self.engine.enqueue(area, self.rooms, time.time(), urgent=True, source="wall_toggle")
-            await self.persist()
+            active = self.engine.find(self.engine.active["uid"]) if self.engine.active else None
+            if active and active["area_id"] == area:
+                self.engine.note(f"{self.rooms[area]['name']} is already being cleaned; no additional job", time.time())
+                await self.persist()
+                self.publish()
+                return
+            self.engine.enqueue(area, self.rooms, time.time(), urgent=True, source=spec["label"])
+            await self.persist()  # Never acknowledge an unsaved request.
             self.publish()
-        # Acknowledgement is deliberately outside the queue lock.
-        if self.settings["acknowledge"] and self.settings["vacuum_entity"]:
-            try:
+        try:
+            if self.settings["acknowledge"]:
                 await self.call("vacuum", "locate", self.settings["vacuum_entity"])
-            except HomeAssistantError:
-                _LOGGER.info("Room was queued, but Locate acknowledgement failed")
-        self.kick()
+        except (HomeAssistantError, TimeoutError) as err:
+            # A failed sound must not roll back or duplicate the saved queue item.
+            async with self.lock:
+                self.engine.note(f"Room queued; Locate acknowledgement failed: {err}", time.time())
+                await self.persist()
+                self.publish()
+            _LOGGER.info("Room was queued, but Locate acknowledgement failed: %s", err)
+        finally:
+            self.kick()
 
     @callback
     def _timer(self, now):
@@ -430,7 +496,7 @@ this record through its coordinator. Any incompatible layout fails closed.
 
     async def persist(self):
         data = {"settings": self.settings, "rooms": self.room_config, "maps": self.maps,
-                "maps_at": self.maps_at, "engine": self.engine.export()}
+                "maps_at": self.maps_at, "engine": self.engine.export(), "gesture_options": self.gesture_options}
         if data != self._saved_data:
             await self.store.async_save(data)
             self._saved_data = deepcopy(data)
@@ -450,14 +516,17 @@ this record through its coordinator. Any incompatible layout fails closed.
                "rooms": list(self.rooms.values()), "maps": self.maps, "maps_at": self.maps_at,
                "telemetry": self.last_telemetry, "backend": self.backend_detail,
                "labels": self.label_ids(), "toggle_entities": self.toggle_entities,
+               "gesture_entities": self.gesture_entities, "gesture_issues": self.gesture_issues,
                "entities": self.entities, "log": self.engine.log[-20:], "reset_deferred": self.engine.reset_deferred,
                "registry_revision": self.registry_revision}
         if include_config:
             out["settings"] = deepcopy(self.settings)
             out["candidates"] = [{"entity_id": s.entity_id, "name": s.attributes.get("friendly_name", s.entity_id),
-                                  "state": s.state, "options": s.attributes.get("options", [])}
+                                  "state": s.state, "options": s.attributes.get("options", []),
+                                  "event_types": s.attributes.get("event_types", []),
+                                  "event_type": s.attributes.get("event_type", "") }
                                  for s in self.hass.states.async_all()
-                                 if s.domain in ("vacuum", "select", "sensor", "switch", "binary_sensor", "input_boolean")]
+                                 if s.domain in ("vacuum", "select", "sensor", "switch", "binary_sensor", "input_boolean", "button", "input_button", "event")]
         return out
 
     def detect(self, vacuum):
@@ -595,7 +664,7 @@ this record through its coordinator. Any incompatible layout fails closed.
                     raise ValueError("Create the Dobby labels first")
                 reg = ar.async_get(self.hass)
                 a = reg.async_get_area(area)
-                keep = set(a.labels) - {labels[k] for k in LABELS if k != "dobby_room_toggle"}
+                keep = set(a.labels) - {labels[k] for k in LABELS if k not in GESTURE_LABELS}
                 if p.get("cleanable"):
                     keep.add(labels["dobby_cleanable"])
                 if p.get("daily"):
@@ -605,17 +674,36 @@ this record through its coordinator. Any incompatible layout fails closed.
                 self.room_config[area] = conf
                 reg.async_update(area, labels=keep)
                 self.refresh_registry()
-            elif action == "set_toggle":
+            elif action in ("set_toggle", "set_gesture"):
                 e = str(p.get("entity_id", ""))
                 reg = er.async_get(self.hass)
                 item = reg.async_get(e)
-                if not item or e.split(".")[0] not in ("switch", "light", "binary_sensor", "input_boolean"):
-                    raise ValueError("Select a registered physical on/off input entity")
-                label = self.label_ids().get("dobby_room_toggle")
-                if not label:
-                    raise ValueError("Create Dobby labels first")
-                updated = set(item.labels)
-                updated.add(label) if p.get("enabled") else updated.discard(label)
+                mode = p.get("label", "dobby_room_toggle")
+                if mode in PRESS_ALIASES:
+                    mode = "dobby_room_press"
+                if mode not in GESTURE_LABELS:
+                    raise ValueError("Choose a supported Dobby gesture label")
+                if not item or (p.get("enabled") and e.split(".")[0] not in
+                                (PRESS_DOMAINS if mode == "dobby_room_press" else STATE_DOMAINS)):
+                    raise ValueError("Choose a registered entity compatible with this gesture")
+                label = self.label_ids().get(mode)
+                if not label and p.get("enabled"):
+                    raise ValueError("Create the Dobby labels first")
+                event_type = p.get("event_type", "")
+                if not isinstance(event_type, str) or len(event_type) > 100:
+                    raise ValueError("Event type must be text up to 100 characters")
+                all_labels = {v for k,v in self.label_ids().items() if k in GESTURE_LABELS}
+                label_reg = lr.async_get(self.hass)
+                for alias in PRESS_ALIASES:
+                    alias_item = label_reg.async_get_label(alias) or label_reg.async_get_label_by_name(alias)
+                    if alias_item:
+                        all_labels.add(alias_item.label_id)
+                updated = set(item.labels) - all_labels
+                if p.get("enabled"):
+                    updated.add(label)
+                    self.gesture_options[e] = {"event_type": event_type.strip()}
+                else:
+                    self.gesture_options.pop(e, None)
                 reg.async_update_entity(e, labels=updated)
                 self.refresh_registry()
             elif action == "enqueue":

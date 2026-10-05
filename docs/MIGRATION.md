@@ -1,3 +1,10 @@
+# Migration note for 0.1.4
+
+`dobby_room_toggle` now means one cycle (2 changes), not two. Replace it with
+`dobby_room_double_toggle` on existing inputs that should keep the old behaviour.
+Create the missing labels in the setup UI. Read ../UPGRADE_0.1.4.md before use.
+The queue, room mappings and existing scheduler configuration are retained.
+
 # Migrating from other Dobby automations
 
 Install disabled. Check the map first. Do not layer two automatic vacuum schedulers on the same robot.

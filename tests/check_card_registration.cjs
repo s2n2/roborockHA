@@ -52,7 +52,7 @@ function ready(env) { env.context.customElements.define('home-assistant', class 
 function assertRegistered(env) {
   const ctor = env.context.customElements.get(TAG);
   assert(ctor);
-  assert.equal(ctor.version, '0.1.3');
+  assert.equal(ctor.version, '0.1.4');
   assert.equal(ctor.getStubConfig().title, 'Dobby');
   assert.equal(Object.getPrototypeOf(ctor.prototype), env.context.HTMLElement.prototype);
   assert.equal(env.context.customCards.filter(c => c.type === TAG).length, 1);

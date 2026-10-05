@@ -91,7 +91,7 @@ def validate_segments(values):
 
 
 class GestureDetector:
-    """Four real on/off transitions in one window; never count attributes.
+    """Two or four real on/off transitions in one window; never count attributes.
 
 State strings must alternate. Unknown/unavailable resets the sequence. Each
 entity has its own window, so toggles on two switches cannot combine.
@@ -101,7 +101,9 @@ entity has its own window, so toggles on two switches cannot combine.
         self.cooldowns = {}
 
     def feed(self, entity, old, new, now, window=2.0, cooldown=5.0,
-             automation=False, reject_automation=True):
+             automation=False, reject_automation=True, transitions=4):
+        if transitions not in (2, 4):
+            raise ValueError("Switch gesture must have two or four transitions")
         if old not in ("on", "off") or new not in ("on", "off"):
             self.windows.pop(entity, None)
             return False
@@ -112,7 +114,9 @@ entity has its own window, so toggles on two switches cannot combine.
             return False
         if now < self.cooldowns.get(entity, 0):
             return False
-        q = self.windows.setdefault(entity, deque(maxlen=4))
+        q = self.windows.setdefault(entity, deque(maxlen=transitions))
+        if q.maxlen != transitions:
+            q = self.windows[entity] = deque(maxlen=transitions)
         if q and q[-1][1] != old:
             q.clear()
         if q and now - q[-1][0] < 0.06:  # Contact bounce/duplicate mirror events.
@@ -120,7 +124,7 @@ entity has its own window, so toggles on two switches cannot combine.
         q.append((now, new))
         while q and now - q[0][0] > window:
             q.popleft()
-        if len(q) != 4:
+        if len(q) != transitions:
             return False
         self.windows.pop(entity, None)
         self.cooldowns[entity] = now + cooldown

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.4
+
+- Added three input gestures: single press, one switch cycle, two switch cycles.
+- BREAKING label semantics: dobby_room_toggle is now two transitions; use
+  dobby_room_double_toggle for the former four-transition behaviour.
+- Added dobby_room_press, with room_press accepted as a short alias.
+- Added button/input_button/event-entity support and UI event-type selection.
+- Accepted requests share persistent queue-first Locate feedback, with error logs.
+- Conflicting labels, restored timestamps, releases and duplicate requests are guarded.
+- Added Buttons & switches setup UI, preserving responsive layout and startup fix.
+- 165 Python, 46 browser and 11 Node registration checks passed in simulations.
+
+
 ## 0.1.3 - Responsive dashboard and setup
 
 - Card-width container queries: narrow desktop columns receive the same careful

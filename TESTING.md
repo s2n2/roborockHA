@@ -1,3 +1,17 @@
+# Current release validation: 0.1.4
+
+See UPGRADE_0.1.4.md and docs/python-0.1.4-test-output.txt.
+Current run: 165 Python tests, 21 existing browser UI checks, 20 new gesture UI
+checks, 5 browser startup checks and 11 Node registration checks passed.
+The gesture test file is tests/test_gestures.py and browser coverage is in
+ tests/test_gesture_ui_browser.py. All use simulated backends; no live robot.
+
+Additional acceptance: test both switch directions for each cycle label and a
+single-press input. Confirm correct Area, exactly one Locate acknowledgement,
+no trigger on release/restoration, and explicit changes to old toggle labels.
+
+The sections below retain the earlier release validation history.
+
 # 0.1.2 validation update
 
 The latest checks are 107 passing Python tests, 11 passing Node registration

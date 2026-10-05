@@ -1,0 +1,27 @@
+{
+  "checks_passed": 20,
+  "checks": [
+    "three gesture choices",
+    "old label semantic change disclosed",
+    "one cycle saved",
+    "two cycles saved without lost click",
+    "single press event options visible",
+    "event entities selectable",
+    "input button bridge selectable",
+    "event types from selected entity",
+    "exact event filter saved",
+    "new button saved without YAML",
+    "edit restores gesture type",
+    "edit restores event filter",
+    "unsaved input survives live refresh",
+    "test locate uses backend action",
+    "gesture removal",
+    "gesture pane fits 390px viewport",
+    "gesture pane fits 1100px viewport",
+    "in-app instructions updated",
+    "press alias documented",
+    "no JavaScript exceptions"
+  ],
+  "browser_errors": [],
+  "scope": "Headless Chromium with simulated HA API; no hardware access"
+}

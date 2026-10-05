@@ -6,7 +6,7 @@ from homeassistant.helpers import config_validation as cv
 from .compat import vol
 from .controller import DOMAIN, DobbyController
 
-ADMIN_ACTIONS = {"create_labels", "detect", "settings", "maps", "save_room", "set_toggle", "disable_legacy", "default_order"}
+ADMIN_ACTIONS = {"create_labels", "detect", "settings", "maps", "save_room", "set_toggle", "set_gesture", "disable_legacy", "default_order"}
 QUEUE_ACTIONS = {"enqueue", "remove", "move", "reset", "enable", "run", "pause", "retry", "complete", "update_note", "locate"}
 
 

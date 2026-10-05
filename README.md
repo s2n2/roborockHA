@@ -1,17 +1,15 @@
-# Dobby Scheduler 0.1.3
+# Dobby Scheduler 0.1.4
 
-## 0.1.3: responsive card and setup layout
+## 0.1.4: single press, one cycle, or two cycles
 
-The dashboard now adapts to the width of its card column, including narrow
-columns on desktop dashboards. The next-room field no longer squeezes the
-completion and battery values. Onboarding, action buttons, room tiles and the
-automatic switch have consistent spacing. The setup popup keeps its header/tabs
-visible, uses a room dropdown on smaller screens and groups its settings.
+Configure inputs under **Buttons & switches** using `dobby_room_press`,
+`dobby_room_toggle` (two changes), or `dobby_room_double_toggle` (four changes).
+The accepted request is saved then acknowledged with Locate (enabled by default).
 
-This is a presentation update. The 0.1.2 card-registration bootstrap is retained.
-Scheduler behaviour, room mappings, storage and entity IDs are unchanged.
-See `UPGRADE_0.1.3.md` and `docs/UI-0.1.3-VALIDATION.md`.
-
+**Existing `dobby_room_toggle` labels now mean ONE cycle.** Change them to
+`dobby_room_double_toggle` to retain the previous two-cycle behaviour.
+Read [UPGRADE_0.1.4.md](UPGRADE_0.1.4.md) for supported button/event types and
+migration. The responsive layout and delayed frontend registration are retained.
 
 A label-driven, room-by-room Roborock scheduler for Home Assistant, with a native ordered to-do queue and a self-contained dashboard card.
 
@@ -22,9 +20,9 @@ A label-driven, room-by-room Roborock scheduler for Home Assistant, with a nativ
 This is an initial, locally tested build. The Python controller and browser card were tested with simulated inputs, not inside a running Home Assistant installation or on a physical robot. It is not an official Home Assistant/Roborock product and this repository is not automatically included in the HACS default catalogue.
 
 
-## 0.1.3 card startup fix
+## Card startup fix retained from 0.1.2
 
-Upgrading from 0.1.1: see [UPGRADE_0.1.3.md](UPGRADE_0.1.3.md). The bundled
+Upgrading from 0.1.1: see [UPGRADE_0.1.2.md](UPGRADE_0.1.2.md). The bundled
 card now waits for Home Assistant's root element before defining the card class
 and registering it. This avoids the extra-module/scoped-registry startup race
 where the picker entry exists but `customElements.get()` returns undefined.
@@ -37,7 +35,7 @@ scheduling logic need to be recreated. A full frontend refresh is required.
 - Native `todo` entity: persistent ordered jobs, descriptions, editable notes and completed state. No separate Local To-do integration is required.
 - Genuine queue ordering, including up/down arrows and Make next. No artificial due times.
 - Mopping-first default-order tool; adjustable per-Area priorities; nightly restoration of `dobby_daily` Areas.
-- Four alternating on/off transitions within two seconds on an entity labelled `dobby_room_toggle` promote its Area to next. Different switches cannot combine into one gesture.
+- Labelled single presses, one-cycle or two-cycle switch gestures promote their Area to next and request Locate feedback. Different inputs cannot combine into one gesture.
 - Vacuum / vacuum-and-mop / mop labels. Mode is confirmed before starting each room.
 - One room job at a time, return to dock and confirmed dust-emptying before the next job.
 - Presence interruption: dock when someone arrives, keep the room pending, restart it after the next confirmed absence.
@@ -95,7 +93,7 @@ This release guards against duplicate picker registration during the transition.
 The automatic module is:
 
 ```text
-/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.3
+/dobby_scheduler_frontend/dobby-scheduler-card.js?v=0.1.4
 ```
 
 This is an integration-provided frontend module, so it need not appear as a
@@ -133,7 +131,7 @@ Defaults: 15-minute absence, 40% minimum battery, 08:00-21:00 cleaning window, 0
 
 ### Rooms & map
 
-Create the six labels using the button. Existing labels with the same name/ID are reused. Unrelated labels are preserved.
+Create the eight labels using the button (or create only the missing ones when upgrading). Existing labels with the same name/ID are reused. Unrelated labels are preserved.
 
 With the robot docked and no scheduler job active, click **Fetch/check maps**. This calls `roborock.get_maps` and reads map names, flags and room numbers; it does not start cleaning or switch maps.
 
@@ -154,24 +152,31 @@ Several segments can form one job/Area, but all share that Area's mode and are t
 | `dobby_vacuum` | Area | Vacuum only |
 | `dobby_vacuum_mop` | Area | Vacuum and mop |
 | `dobby_mop` | Area | Mop only |
-| `dobby_room_toggle` | One physical on/off input entity | Rapid gesture queues its Area next |
+| `dobby_room_toggle` | One on/off input entity | One complete cycle, two changes |
+| `dobby_room_double_toggle` | One on/off input entity | Two cycles, four changes |
+| `dobby_room_press` | Momentary input, button or event entity | Single press; `room_press` alias accepted |
 
 Only one mode label per Area. No mode label defaults to vacuum, with a warning in room metadata. Conflicting mode labels block the room until corrected. Label changes outside the card also refresh the scheduler's Area list.
 
-### Switch gestures
+### Buttons & switches
 
-Select one physical input entity and add the gesture label. Its explicit Area takes precedence over its device's Area. Use a separate physical input rather than a light output where available. Do not label both an input and its mirrored light output.
+Select an input and one of the three gestures in the setup pane. A complete
+switch cycle returns to its starting state. Single-press mode accepts a rising
+edge for momentary on/off inputs or a fresh button/event timestamp. For event
+entities, common short-press types are recognised; the UI also permits an exact
+vendor-specific event type. One gesture label per input; conflicts are blocked.
 
-The default gesture is **four real transitions**, for example from off:
+The entity Area overrides the device Area. Raw event-only buttons can be
+bridged through an input_button helper using a standard HA UI automation.
+No per-device YAML is required for inputs already exposed as supported entities.
+See the upgrade guide for restoration filtering, cooldown and bridge limitations.
 
-```text
-off -> ON -> OFF -> ON -> OFF
-       1     2     3     4     within two seconds from first to fourth
-```
-
-It also works in the opposite direction. Attribute-only changes and unknown/unavailable states do not count. Known automation-generated contexts are ignored by default, but physical-vs-automation context is not perfectly distinguishable for every integration. Test your chosen input. Local on/off inputs work better than cloud-delayed relays. A switch that only emits button events needs a separate event adapter; this build watches on/off state entities.
-
-A recognised gesture adds/promotes the room, never duplicates it, and optionally sends `vacuum.locate`. That is a built-in location acknowledgement, not a custom spoken room name. It does not turn your lights on/off for feedback or make the robot start immediately in an occupied house. Requests for the active room do not create another cleaning pass. Requests for an already completed room make it pending again.
+All accepted input requests save the queue and call vacuum.locate when Locate
+acknowledgement is enabled (default ON). DND/volume/firmware may suppress the
+sound. Failure is logged without deleting the job. An active room is not
+requeued. Existing pending rooms are promoted without duplicates; completed
+rooms can be requested again. No lights are flashed and a request does not
+bypass the scheduler's presence/window/safety rules.
 
 ## Daily use
 
