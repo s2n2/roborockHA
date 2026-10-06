@@ -1,0 +1,8 @@
+# Add as a Manual card. Do not include the robot device/raw room as extra targets.
+type: logbook
+title: Dobby activity
+target:
+  entity_id:
+    - sensor.dobby_scheduler_activity
+hours_to_show: 24
+name_detail: entity

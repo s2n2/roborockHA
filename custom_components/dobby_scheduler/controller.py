@@ -17,6 +17,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .activity import ActivityTracker, resolve_room
 from .gestures import (GESTURE_LABELS, PRESS_ALIASES, STATE_DOMAINS, PRESS_DOMAINS, PressDetector, resolve_gesture)
 from .const import VERSION
 from .engine import Engine, GestureDetector, DEFAULTS, resolve_mode, validate_segments, number, clock_minutes, cleaning_day
@@ -107,6 +108,10 @@ class DobbyController:
         self.last_telemetry = {}
         self.registry_revision = 0
         self._saved_data = None
+        self.activity_tracker = ActivityTracker()
+        self.activity = {}
+        self.activity_sources = {}
+        self.activity_watched = set()
 
     async def async_load(self):
         saved = await self.store.async_load() or {}
@@ -142,6 +147,7 @@ class DobbyController:
 
     @callback
     def publish(self):
+        self.update_activity()
         for fn in tuple(self.listeners):
             fn()
 
@@ -274,7 +280,11 @@ class DobbyController:
                 self.hass.async_create_task(self._gesture(entity, dict(spec)))
         watched = {v for k, v in self.settings.items() if k.endswith("_entity") and isinstance(v, str)}
         watched.update(self.settings["water_problem_entities"] + self.settings["blocking_entities"])
-        if entity in watched or (entity or "").startswith("automation."):
+        if entity in watched or entity in self.activity_watched:
+            # Pure read-only presentation must not wait behind a slow robot command.
+            self.publish()
+            self.kick()
+        elif (entity or "").startswith("automation."):
             self.kick()
 
     @callback
@@ -337,6 +347,7 @@ class DobbyController:
 
     @callback
     def _timer(self, now):
+        self.publish()  # Finish a room confirmation even if its state stops changing.
         self.kick()
 
     @callback
@@ -415,6 +426,71 @@ this record through its coordinator. Any incompatible layout fails closed.
         if summary is None:
             summary = getattr(getattr(coordinator, "properties_api", None), "clean_summary", None)
         return number(getfield(summary, "dust_collection_count"))
+
+    def reporting_sources(self):
+        """Explicit choices win. Conservative conventional-name discovery otherwise.
+
+        This runs in memory and never registers, changes, or enables a source.
+        Blank optional fields are automatic; missing sources remain missing.
+        """
+        slug = self.settings["vacuum_entity"].split(".", 1)[-1]
+        candidates = {
+            "current_room_entity": [("sensor", "current_room")],
+            "status_entity": [("sensor", "status"), ("sensor", "state")],
+            "dock_error_entity": [("sensor", "dock_error"), ("sensor", "dock_dock_error")],
+            "drying_entity": [("binary_sensor", "mop_drying")],
+        }
+        out = {}
+        for key, options in candidates.items():
+            configured = self.settings.get(key, "")
+            out[key] = configured or next((entity for domain, suffix in options
+                         if self.hass.states.get(entity := f"{domain}.{slug}_{suffix}")), "")
+        return out
+
+    @callback
+    def update_activity(self):
+        """Publish robot observations, not queue progress. No controller side effects."""
+        sources = self.reporting_sources()
+        self.activity_sources = sources
+        self.activity_watched = {e for e in sources.values() if e}
+        raw_room = self.raw(sources["current_room_entity"])
+        map_name = self.raw(self.settings["map_entity"])
+        water = []
+        for entity in self.settings["water_problem_entities"]:
+            if self.boolean(entity) is not True:
+                continue
+            if "clean_water_box" in entity:
+                water.append("Refill/reseat clean-water tank")
+            elif "dirty_water_box" in entity:
+                water.append("Empty/reseat dirty-water tank")
+            elif "water_shortage" in entity:
+                water.append("Water shortage")
+            else:
+                state = self.hass.states.get(entity)
+                water.append(str(state.attributes.get("friendly_name", entity)) + " needs attention")
+        observed = {
+            "vacuum_entity": self.settings["vacuum_entity"],
+            "vacuum_state": self.raw(self.settings["vacuum_entity"]),
+            "detail_state": self.raw(sources["status_entity"]),
+            "room_source": sources["current_room_entity"],
+            "resolved_room": resolve_room(raw_room, self.maps, map_name),
+            "map_name": map_name,
+            "error_raw": self.raw(self.settings["error_entity"]),
+            "dock_error_raw": self.raw(sources["dock_error_entity"]),
+            "mode": self.raw(self.settings["mode_entity"]),
+            "washing": self.boolean(self.settings["wash_entity"], absent=None),
+            "emptying": self.boolean(self.settings["empty_entity"], absent=None),
+            "drying": self.boolean(sources["drying_entity"], absent=None),
+            "water_problems": water,
+        }
+        self.activity = {
+            **self.activity_tracker.update(observed, time.monotonic(), self.settings["room_confirm_seconds"]),
+            "raw_room": raw_room, "raw_vacuum_state": observed["vacuum_state"],
+            "raw_status": observed["detail_state"], "error_code": observed["error_raw"],
+            "dock_error_code": observed["dock_error_raw"], "mode": observed["mode"],
+            "water_problems": water,
+            "sources": dict(sources),
+        }
 
     def telemetry(self):
         c = self.settings
@@ -503,6 +579,7 @@ this record through its coordinator. Any incompatible layout fails closed.
 
     def snapshot(self, include_config=False):
         self.telemetry()
+        self.update_activity()
         jobs = []
         for j in self.engine.jobs:
             r = self.rooms.get(j["area_id"], {})
@@ -515,6 +592,7 @@ this record through its coordinator. Any incompatible layout fails closed.
                "fault": self.engine.fault, "day": self.engine.day, "jobs": jobs,
                "rooms": list(self.rooms.values()), "maps": self.maps, "maps_at": self.maps_at,
                "telemetry": self.last_telemetry, "backend": self.backend_detail,
+               "activity": deepcopy(self.activity),
                "labels": self.label_ids(), "toggle_entities": self.toggle_entities,
                "gesture_entities": self.gesture_entities, "gesture_issues": self.gesture_issues,
                "entities": self.entities, "log": self.engine.log[-20:], "reset_deferred": self.engine.reset_deferred,
@@ -536,7 +614,11 @@ this record through its coordinator. Any incompatible layout fails closed.
         suffix = {"mode_entity": ("select", "cleaning_mode"), "battery_entity": ("sensor", "battery"),
                   "error_entity": ("sensor", "vacuum_error"), "map_entity": ("select", "selected_map"),
                   "empty_entity": ("switch", "dock_dust_emptying"), "wash_entity": ("switch", "dock_mop_washing"),
-                  "mop_intensity_entity": ("select", "mop_intensity")}
+                  "mop_intensity_entity": ("select", "mop_intensity"),
+                  "current_room_entity": ("sensor", "current_room"),
+                  "status_entity": ("sensor", "status"),
+                  "dock_error_entity": ("sensor", "dock_error"),
+                  "drying_entity": ("binary_sensor", "mop_drying")}
         out = {"vacuum_entity": vacuum}
         for key, (domain, tail) in suffix.items():
             e = f"{domain}.{slug}_{tail}"
@@ -579,7 +661,8 @@ this record through its coordinator. Any incompatible layout fails closed.
                     raise ValueError(f"{key} must be a finite number")
                 ranges = {"away_minutes": (0, 120), "minimum_battery": (10, 100), "gesture_seconds": (0.5, 5), "gesture_cooldown": (2, 30),
                           "start_timeout": (60, 900), "room_timeout": (600, 21600), "dock_timeout": (60, 1800),
-                          "proof_timeout": (60, 900), "empty_timeout": (60, 900), "dock_settle": (5, 120)}
+                          "proof_timeout": (60, 900), "empty_timeout": (60, 900), "dock_settle": (5, 120),
+                          "room_confirm_seconds": (1, 600)}
                 lo, hi = ranges[key]
                 if not lo <= n <= hi:
                     raise ValueError(f"{key} must be between {lo} and {hi}")
@@ -595,7 +678,13 @@ this record through its coordinator. Any incompatible layout fails closed.
                 expected = {"vacuum_entity": ["vacuum"], "presence_entity": ["binary_sensor", "input_boolean"],
                             "mode_entity": ["select"], "battery_entity": ["sensor"], "error_entity": ["sensor"],
                             "map_entity": ["select"], "empty_entity": ["switch"], "wash_entity": ["switch"],
-                            "mop_intensity_entity": ["select"], "completion_entity": ["sensor"]}[key]
+                            "mop_intensity_entity": ["select"], "completion_entity": ["sensor"],
+                            "current_room_entity": ["sensor"], "status_entity": ["sensor"],
+                            "dock_error_entity": ["sensor"], "drying_entity": ["binary_sensor"]}[key]
+                if value in self.entities.values() or value in {
+                    "sensor.dobby_scheduler_activity", "sensor.dobby_scheduler_room_stable"
+                }:
+                    raise ValueError("Choose a robot source, not a Dobby Scheduler output sensor")
                 if value.split(".")[0] not in expected:
                     raise ValueError(f"Wrong entity type for {key}")
             out[key] = value

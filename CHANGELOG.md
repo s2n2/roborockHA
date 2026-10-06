@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.5 - Reusable activity and confirmed rooms
+
+- Added Activity and Confirmed room text sensors with unique IDs.
+- Room names require a configurable full-minute confirmation by default;
+  transient room readings do not enter the filtered history.
+- Physical error/return/dock/mop state reporting is separate from scheduler state.
+- Reset confirmation on source/map changes, unknown readings and restart; do not
+  backdate new entries or treat the scheduled target as observed location.
+- Added read-only optional sources and delay configuration to the card pop-up.
+- Added a clickable Robot activity row and Activity diagnostics/instructions.
+- Included native Activity/logbook card examples without raw/device targets.
+- Preserved queue engine, gestures/Locate, completion rules and resource loading.
+- 245 Python, 67 browser and 11 Node registration checks passed in simulations.
+
+
 ## 0.1.4
 
 - Added three input gestures: single press, one switch cycle, two switch cycles.

@@ -1,0 +1,8 @@
+# Room names are published only after the full confirmation window.
+type: logbook
+title: Dobby confirmed rooms
+target:
+  entity_id:
+    - sensor.dobby_scheduler_room_stable
+hours_to_show: 24
+name_detail: entity

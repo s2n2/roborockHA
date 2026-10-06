@@ -25,6 +25,9 @@ DEFAULTS = {
     "start_timeout": 300, "room_timeout": 7200, "dock_timeout": 600,
     "proof_timeout": 240, "empty_timeout": 240, "dock_settle": 10,
     "mop_intensity_entity": "", "mop_intensity": "medium",
+    # Optional read-only reporting sources; blank = conventional-name discovery.
+    "current_room_entity": "", "status_entity": "", "dock_error_entity": "",
+    "drying_entity": "", "room_confirm_seconds": 60,
 }
 
 

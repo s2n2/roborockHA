@@ -4,7 +4,7 @@ from .entity import DobbyEntity
 
 async def async_setup_entry(hass, entry, async_add_entities):
     c = entry.runtime_data
-    async_add_entities([DobbyStatus(c), DobbyCount(c, False), DobbyCount(c, True)])
+    async_add_entities([DobbyStatus(c), DobbyCount(c, False), DobbyCount(c, True), DobbyActivity(c), DobbyStableRoom(c)])
 
 class DobbyStatus(DobbyEntity, SensorEntity):
     _attr_icon = "mdi:robot-vacuum"
@@ -31,3 +31,69 @@ class DobbyCount(DobbyEntity, SensorEntity):
     @property
     def native_value(self):
         return sum((j["status"] == "completed") == self.completed for j in self.controller.engine.jobs)
+
+
+class DobbyActivity(DobbyEntity, SensorEntity):
+    """Human-readable robot activity; intentionally distinct from scheduler status."""
+    def __init__(self, c):
+        super().__init__(c, "activity", "Activity", "sensor")
+        c.update_activity()
+
+    @property
+    def available(self):
+        return self.controller.activity.get("available", True)
+
+    @property
+    def icon(self):
+        return self.controller.activity.get("icon", "mdi:robot-vacuum")
+
+    @property
+    def native_value(self):
+        return self.controller.activity.get("text", "Not configured")
+
+    @property
+    def extra_state_attributes(self):
+        c, a = self.controller, self.controller.activity
+        return {
+            "activity_code": a.get("code"), "confirmed_room": a.get("room"),
+            "room_is_current": a.get("room_is_current", False),
+            "room_pending_confirmation": a.get("room_pending", False),
+            "room_confirmation_seconds": a.get("confirmation_seconds", 60),
+            "cleaning_mode": a.get("mode"), "error_code": a.get("error_code"),
+            "dock_error_code": a.get("dock_error_code"),
+            "vacuum_state": a.get("raw_vacuum_state"), "detailed_status": a.get("raw_status"),
+            "scheduled_room": (c.engine.active or {}).get("name"),
+            "scheduler_phase": (c.engine.active or {}).get("phase"),
+            "scheduler_enabled": c.engine.enabled,
+            "room_source": a.get("sources", {}).get("current_room_entity"),
+            "status_source": a.get("sources", {}).get("status_entity"),
+            "water_problems": a.get("water_problems", []),
+        }
+
+
+class DobbyStableRoom(DobbyEntity, SensorEntity):
+    """Last room whose live sensor reading passed the confirmation window."""
+    _attr_icon = "mdi:floor-plan"
+
+    def __init__(self, c):
+        super().__init__(c, "room_stable", "Confirmed room", "sensor")
+        c.update_activity()
+
+    @property
+    def available(self):
+        return self.controller.activity.get("room_available", False)
+
+    @property
+    def native_value(self):
+        return self.controller.activity.get("confirmed_room")
+
+    @property
+    def extra_state_attributes(self):
+        a = self.controller.activity
+        return {
+            "source_entity": a.get("sources", {}).get("current_room_entity"),
+            "confirmation_seconds": a.get("confirmation_seconds", 60),
+            "candidate_room": a.get("candidate_room"),
+            "matches_current_reading": a.get("confirmed_room_is_current", False),
+            "basis": "Last room reported continuously for the confirmation window; not a live map coordinate.",
+        }

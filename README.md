@@ -1,4 +1,18 @@
-# Dobby Scheduler 0.1.4
+# Dobby Scheduler 0.1.5
+
+## 0.1.5: reusable robot activity and one-minute room confirmation
+
+New `sensor.dobby_scheduler_activity` reports Cleaning Kitchen, Returning to dock,
+Main brush jammed and other observed robot states, independently of the scheduler.
+`sensor.dobby_scheduler_room_stable` publishes only room names reported unchanged
+for the confirmation window (60 seconds by default). Neither is job-completion
+proof. Configure sources and the delay in Robot & schedule -> Activity & room
+history. No extra per-device YAML is required.
+
+Use the Activity sensor as the sole target in `dashboard-activity-card.yaml` for
+quiet room history with immediate error/dock updates. Read
+[UPGRADE_0.1.5.md](UPGRADE_0.1.5.md) for filter semantics, setup and update steps.
+
 
 ## 0.1.4: single press, one cycle, or two cycles
 

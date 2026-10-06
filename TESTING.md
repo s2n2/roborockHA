@@ -1,3 +1,9 @@
+# Latest validation: 0.1.5
+
+See UPGRADE_0.1.5.md and docs/validation-0.1.5.txt for this release's checks.
+The sections below record previous release validation; they are not additional
+physical-robot or live-Home-Assistant tests.
+
 # Current release validation: 0.1.4
 
 See UPGRADE_0.1.4.md and docs/python-0.1.4-test-output.txt.

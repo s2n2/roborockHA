@@ -1,0 +1,17 @@
+Dobby Scheduler 0.1.5 - local validation
+
+Baseline: supplied roborockHA_v0.1.4.zip; live repository fetch unsuccessful.
+245 Python tests passed (165 existing + 80 reporting/adapter cases).
+67 browser checks passed: 21 existing UI, 20 gestures, 5 startup, 21 activity UI.
+11 Node registration regressions passed.
+Both YAML parsers accepted 7 .yaml/.yml files.
+Python compileall, JavaScript syntax and offline repository checks passed.
+
+Verified unchanged by AST or byte comparison:
+- Engine class (queue execution/completion/recovery)
+- GestureDetector and gesture module
+- controller execute(), call(), _gesture(), clean_record()
+
+No live HA instance, robot, credentials, HACS install, GitHub push, external
+queue/control actions or hassfest certification were involved in these checks.
+Browser screenshots are simulations with a mocked Home Assistant backend.
