@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.7 - Immediate switch/button batches while home
+
+- Separate per-job gesture-start permission from ordinary queue ordering.
+- Process all freshly gesture-requested rooms while home, even with Automatic when
+  away off, with no away-delay or automatic-window wait for those rooms.
+- Preserve sequential cleaning, dock/empty verification and water fallback.
+- Ordinary daily work and dashboard Make next do not acquire gesture permission.
+- Keep fresh requests across an ordinary job's arrival-home interruption.
+- Cancel runtime permissions on explicit pause, reset, restart or safety abort.
+- Dispatch without waiting for Locate; rollback a gesture if queue storage fails.
+- Show authorised rooms on the card, status attributes and native to-do metadata.
+- 389 Python tests, 106 browser checks, 102 layout assertions and 11 registration
+  checks passed locally with simulated data; not a live HA/hardware test.
+
 ## 0.1.6 - Vacuum-only fallback for tank alerts
 
 - Default-on UI option: vacuum instead of mopping for confirmed configured tank alerts.

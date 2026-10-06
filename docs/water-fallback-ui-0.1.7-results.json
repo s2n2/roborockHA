@@ -1,0 +1,28 @@
+{
+  "checks_passed": 21,
+  "checks": [
+    "no invented fallback on normal queue",
+    "fallback enabled by default in setup",
+    "can opt out using UI without YAML",
+    "setting saves as boolean true",
+    "source uncertainty limit explained",
+    "active attempt has nonfault fallback banner",
+    "fallback banner identifies room",
+    "temporary downgrade explained",
+    "room chip does not still advertise wet run",
+    "queue row shows actual dry plan",
+    "job details preserve requested mode",
+    "job details show fallback result",
+    "390px no page overflow",
+    "completed room visibly not marked mopped",
+    "skipped mopping retained in daily summary",
+    "fallback names HTML escaped",
+    "real fault not disguised by fallback banner",
+    "embedded help documents behaviour",
+    "settings mobile dialog no overflow",
+    "display and setting changes issue no robot commands",
+    "no JavaScript exceptions"
+  ],
+  "browser_errors": [],
+  "scope": "Headless Chromium with mocked HA data, not a real Home Assistant installation or robot"
+}

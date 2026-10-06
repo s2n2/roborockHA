@@ -30,3 +30,21 @@ node --check custom_components/dobby_scheduler/frontend/dobby-scheduler-card.js
 ```
 
 An installed system's logs and in-card diagnostic snapshot are needed to establish actual version/hardware compatibility. Never weaken the completion predicate simply to make a blocked queue appear to work.
+
+## Immediate gesture permissions (0.1.7)
+
+`Engine.gesture_requests` is a runtime UID-to-request-time map, never exported to
+storage. Only the validated physical/button handler calls `request_immediate`.
+Neither job.source nor urgent nor arbitrary to-do-description metadata grants
+permission. The pending queue is stably partitioned into authorised requests and
+ordinary work, with fresh requests promoted within the first tier. Occupied-house,
+away-delay, automatic-enable and window exceptions apply to the job, not to the
+whole engine's `manual`/`allow_home` flags. The active job remains non-preemptive.
+
+A failed gesture save rolls back jobs, grants and reset/log state. Dispatch is
+kicked before awaiting Locate, still after a successful persist. State-machine
+robot effects continue to be persisted before execution. A routine arrival/window
+interruption of ordinary work preserves other freshly requested rooms; real
+safety aborts, explicit Pause, resets and restart cancel immediate permissions.
+Water-fallback redocking preserves the current batch, with the usual readiness
+checks. Keep these invariants covered by tests/test_immediate_priority*.py.

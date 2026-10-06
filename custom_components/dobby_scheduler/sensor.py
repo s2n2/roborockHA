@@ -13,7 +13,7 @@ class DobbyStatus(DobbyEntity, SensorEntity):
     @property
     def native_value(self):
         e = self.controller.engine
-        return "attention" if e.fault else (e.active["phase"] if e.active else "waiting" if e.enabled or e.manual else "disabled")
+        return "attention" if e.fault else (e.active["phase"] if e.active else "waiting" if e.enabled or e.manual or e.immediate_jobs() else "disabled")
     @property
     def extra_state_attributes(self):
         c = self.controller
@@ -22,6 +22,10 @@ class DobbyStatus(DobbyEntity, SensorEntity):
                                   if j["status"] == "needs_action" and j["uid"] != (c.engine.active or {}).get("uid")), None),
                 "cleaning_day": c.engine.day, "fault": c.engine.fault, "backend": c.backend_detail,
                 "reset_deferred": c.engine.reset_deferred,
+                "immediate_requested_rooms": [c.rooms.get(j["area_id"], {}).get("name", j["area_id"])
+                                             for j in c.engine.immediate_jobs()],
+                "start_policy": (c.engine.active or {}).get("start_policy"),
+                "gesture_start_immediately": c.settings.get("gesture_start_immediately", True),
                 "requested_mode": (c.engine.active or {}).get("requested_mode"),
                 "effective_mode": (c.engine.active or {}).get("mode"),
                 "water_fallback": (c.engine.active or {}).get("water_fallback", False),

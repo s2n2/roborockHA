@@ -1,0 +1,25 @@
+{
+  "checks_passed": 18,
+  "checks": [
+    "no immediate banner for ordinary daily queue",
+    "immediate gesture start enabled by default",
+    "per-room permission explained",
+    "automatic-window bypass explicit",
+    "queue-only option can be saved",
+    "immediate option can be restored",
+    "gesture pane explains batch permissions",
+    "batch banner appears even with automatic scheduling off",
+    "all pending immediate rooms displayed",
+    "normal daily queue stays distinct",
+    "two rows visibly carry immediate permission",
+    "job details show scoped permission",
+    "mobile page does not overflow",
+    "request names HTML-escaped",
+    "batch banner removed when permission ends",
+    "ordinary priority is not mislabelled run-now",
+    "mobile settings do not overflow",
+    "no JavaScript errors"
+  ],
+  "browser_errors": [],
+  "scope": "Headless Chromium with mocked Home Assistant backend; no live robot"
+}

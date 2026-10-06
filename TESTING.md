@@ -1,3 +1,30 @@
+# Latest validation: 0.1.7
+
+Read UPGRADE_0.1.7.md and docs/validation-0.1.7.txt. Current run:
+389 Python tests, 106 browser checks, 102 layout assertions, 11 Node registration
+checks. Tests are simulated, not a live Home Assistant or robot installation.
+
+Additional supervised acceptance for this release:
+
+1. While home and with Automatic when away OFF, trigger one known room using its
+   configured physical gesture. Check Locate and the Switch-requested cleaning
+   banner. It should request cleaning as soon as ready without an absence delay.
+2. While that room runs, request two more. The active room must not be pre-empted;
+   the newest pending request should be next and all three should run/empty in turn.
+3. Leave at least one normal daily room unrequested. It must not run at home merely
+   because the three explicit requests completed. Test the ordinary away schedule
+   separately with automatic enabled.
+4. Press Pause & dock. All requested jobs must stay pending and permissions must
+   be cancelled. A fresh gesture authorises that room alone. Verify extra pause
+   helpers still block; don't disable safety checks to make the test pass.
+5. Reload/restart and confirm old urgent flags do not start work without a fresh
+   gesture. Check the queue and mapping remain intact. Check the option OFF restores
+   queue-only behaviour with the same Locate feedback.
+6. Check the 0.1.6 water fallback and emptying tests below still behave as documented.
+   Do not deliberately jam the robot or perform unsafe physical fault tests.
+
+Historical notes follow, not additional hardware tests.
+
 # Latest validation: 0.1.6
 
 Read UPGRADE_0.1.6.md and docs/validation-0.1.6.txt. Current local run:

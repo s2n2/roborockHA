@@ -1,0 +1,20 @@
+Dobby Scheduler 0.1.7 - locally executed validation
+Baseline: supplied roborockHA_v0.1.6.zip. Live repository not verified.
+
+Python: 389 tests passed (322 existing + 67 new).
+New tests: tests/test_immediate_priority.py, tests/test_immediate_priority_adapter.py.
+Browser: 106 checks passed (general21 + gesture20 + activity21 + water21 + startup5 + immediate18).
+Layout: 102 assertions passed.
+Registration: 11 checks passed.
+All browser suites reported zero JavaScript errors.
+Python compilation, JS syntax and offline repository metadata checks passed.
+
+Scope: mocked HA backends/registries/telemetry with real headless Chromium.
+No running Home Assistant, actual Roborock, credentials or hardware accessed.
+No hosted HACS/hassfest execution or remote GitHub modification.
+
+Regressions include multiple gesture jobs sequentially at home, auto off, no
+normal-daily spillover, late requests, arrival during automatic work, no takeover
+of external work, map/error/battery/blocker guards, mode confirmation, real
+successful-completion and emptying, water fallback with redock, pause/reset/restart
+permission revocation, queue persistence before dispatch, and slow/failed Locate.

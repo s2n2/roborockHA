@@ -43,6 +43,7 @@ class DobbyTodo(DobbyEntity, TodoListEntity):
                                       "map": r.get("map_name"), "segments": r.get("segments", []),
                                       "default_priority": r.get("priority", 100), "source": j.get("source"),
                                       "reason": j.get("reason", ""), "note": j.get("note", ""),
+                                      "immediate_request": self.controller.engine.is_immediate(j["uid"]),
                                       "requested_mode": a.get("requested_mode", j.get("requested_mode", r.get("mode"))),
                                       "effective_mode": a.get("mode", j.get("executed_mode", r.get("mode"))),
                                       "executed_mode": j.get("executed_mode"),

@@ -329,9 +329,27 @@ class DobbyController:
                 await self.persist()
                 self.publish()
                 return
-            self.engine.enqueue(area, self.rooms, time.time(), urgent=True, source=spec["label"])
-            await self.persist()  # Never acknowledge an unsaved request.
+            # Reconcile a missed/first daily reset before adding a fresh request.
+            # Otherwise the next scheduler tick could overwrite it with defaults.
+            day = cleaning_day(dt_util.now(), self.settings["reset_time"])
+            previous = (deepcopy(self.engine.jobs), dict(self.engine.gesture_requests),
+                        deepcopy(self.engine.log), self.engine.day, self.engine.reset_deferred,
+                        self.engine.manual, self.engine.allow_home)
+            try:
+                if self.engine.day != day:
+                    self.engine.reset(day, self.rooms, time.time())
+                uid = self.engine.enqueue(area, self.rooms, time.time(), urgent=True, source=spec["label"])
+                if self.settings.get("gesture_start_immediately", True):
+                    self.engine.request_immediate(uid, time.time())
+                await self.persist()  # Never start or acknowledge an unsaved request.
+            except Exception:
+                # A later timer must not start a request whose storage failed.
+                (self.engine.jobs, self.engine.gesture_requests, self.engine.log,
+                 self.engine.day, self.engine.reset_deferred,
+                 self.engine.manual, self.engine.allow_home) = previous
+                raise
             self.publish()
+        self.kick()  # A slow/failed Locate response must not delay dispatch.
         try:
             if self.settings["acknowledge"]:
                 await self.call("vacuum", "locate", self.settings["vacuum_entity"])
@@ -613,9 +631,13 @@ this record through its coordinator. Any incompatible layout fails closed.
                          "requested_mode": requested, "effective_mode": effective,
                          "water_fallback": bool(fallback), "fallback_reason": fallback,
                          "segments": r.get("segments", []), "map_name": r.get("map_name", ""),
-                         "priority": r.get("priority", 100), "mapping_error": r.get("mapping_error", "")})
+                         "priority": r.get("priority", 100), "mapping_error": r.get("mapping_error", ""),
+                         "immediate_request": self.engine.is_immediate(j["uid"])})
         out = {"version": VERSION, "entry_id": self.entry.entry_id, "name": self.entry.title,
                "enabled": self.engine.enabled, "manual": self.engine.manual,
+               "gesture_start_immediately": self.settings.get("gesture_start_immediately", True),
+               "immediate_rooms": [self.rooms.get(j["area_id"], {}).get("name", j["area_id"])
+                                   for j in self.engine.immediate_jobs()],
                "active": deepcopy(self.engine.active), "reason": self.engine.wait_reason,
                "fault": self.engine.fault, "day": self.engine.day, "jobs": jobs,
                "vacuum_on_water_problem": self.settings["vacuum_on_water_problem"],
@@ -741,6 +763,9 @@ this record through its coordinator. Any incompatible layout fails closed.
                     for r in self.room_config.values():
                         r["verified"] = False
                     self.engine.enabled = False
+                if (not checked.get("gesture_start_immediately", True)
+                        or checked["vacuum_entity"] != self.settings["vacuum_entity"]):
+                    self.engine.clear_immediate()
                 self.settings = checked
                 self.refresh_registry()
             elif action == "maps":

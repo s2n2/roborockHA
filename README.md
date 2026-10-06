@@ -1,4 +1,21 @@
-# Dobby Scheduler 0.1.6
+# Dobby Scheduler 0.1.7
+
+
+## 0.1.7: switch-requested rooms run now, even while home
+
+**Behaviour change:** fresh labelled switch/button gestures now start their rooms
+as soon as ready, without waiting for the automatic schedule, absence or away delay.
+All requested rooms run consecutively, docking/emptying between them; ordinary
+daily rooms do not inherit their occupied-house permission. The current room is
+not interrupted by a later request. Existing Locate feedback remains enabled by
+default and a slow sound response no longer delays dispatch.
+
+Find **Run switch/button requests immediately, even while home** under Robot &
+schedule. It defaults ON; turn it off to retain queue-only gestures. Explicit pause,
+reset or restart cancels immediate permissions. A fresh gesture is needed after
+updating; old priority items do not automatically become immediate jobs.
+Hardware, mappings and safety checks remain in place. Test two rooms while home
+under supervision. See [UPGRADE_0.1.7.md](UPGRADE_0.1.7.md) for batch semantics.
 
 ## 0.1.6: keep cleaning when a water tank needs attention
 
@@ -211,7 +228,7 @@ Tap room chips to add/remove today's selections. Completed rooms can be tapped t
 
 Daily defaults rebuilds the queue from current daily labels in saved priority order. Nightly reset does the same automatically, clears yesterday's ad-hoc requests/completed state, and resets temporary promotions. A reset due during an active job is deferred; after a missed reset or restart, the next local cleaning day is reconciled. Normal ordering uses the saved priorities; cleaning mode never secretly overrides an urgent or manually reordered queue.
 
-Enable Automatic when away only after testing. The configured absence must be continuous and known. When someone returns during an owned job, it is sent to the dock and left pending. Once the house is away again for the delay, the room can start from the beginning. A Home Assistant restart also leaves an in-flight room pending and docks it conservatively; it never restores a permission override to clean while someone is home.
+Enable Automatic when away only after testing. The configured absence must be continuous and known. When someone returns during an ordinary automatic job, it is sent to the dock and left pending. An explicitly gesture-requested job can continue while home; other pending gesture requests keep their own permission. Once the house is away again for the delay, the room can start from the beginning. A Home Assistant restart also leaves an in-flight room pending and docks it conservatively; it never restores a permission override to clean while someone is home.
 
 The scheduler changes the room's cleaning mode before issuing the one-room job and waits for it to be reported. It optionally sets the configured mop intensity only for wet jobs. **It never explicitly starts a mop wash.** Dock firmware still decides when automatic washing is needed; selecting vacuum cannot guarantee that no firmware-initiated washing occurs.
 

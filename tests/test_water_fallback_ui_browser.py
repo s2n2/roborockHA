@@ -45,13 +45,13 @@ def run():
         page.locator('[data-action=close]').click()
         page.set_viewport_size({'width':390,'height':950})
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');checks.append('390px no page overflow')
-        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/water-fallback-0.1.6-mobile.png'))
+        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/water-fallback-0.1.7-mobile.png'))
         page.evaluate("""async()=>{demo.active=null;demo.reason='Waiting for everyone to leave';
           Object.assign(demo.jobs[0],{status:'completed',mopping_skipped:true,executed_mode:'vacuum',result:'vacuum_only_water_fallback'});
           await document.querySelector('dobby-scheduler-card').refresh();}""")
         assert 'Vacuumed only - mop skipped' in page.locator('.roomchip').first.inner_text();checks.append('completed room visibly not marked mopped')
         assert 'Kitchen' in page.locator('.skipped-mopping').inner_text();checks.append('skipped mopping retained in daily summary')
-        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/water-result-0.1.6-mobile.png'))
+        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/water-result-0.1.7-mobile.png'))
         page.evaluate("""async()=>{demo.jobs[1].water_fallback=true;demo.jobs[1].name='<img src=x onerror=alert(1)>';
           await document.querySelector('dobby-scheduler-card').refresh();}""")
         assert page.locator('.water-fallback img').count()==0;checks.append('fallback names HTML escaped')
@@ -67,7 +67,7 @@ def run():
         browser.close()
     result={'checks_passed':len(checks),'checks':checks,'browser_errors':errors,
       'scope':'Headless Chromium with mocked HA data, not a real Home Assistant installation or robot'}
-    (ROOT/'docs/water-fallback-ui-0.1.6-results.json').write_text(json.dumps(result,indent=2))
+    (ROOT/'docs/water-fallback-ui-0.1.7-results.json').write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))
 
 if __name__=='__main__':run()

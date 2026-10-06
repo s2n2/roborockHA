@@ -21,6 +21,7 @@ DEFAULTS = {
     "window_start": "08:00", "window_end": "21:00",
     "gesture_seconds": 2.0, "gesture_cooldown": 5.0,
     "reject_automation_context": True, "acknowledge": True,
+    "gesture_start_immediately": True,
     "empty_after_room": True, "empty_after_mop": True,
     "vacuum_on_water_problem": True,
     "start_timeout": 300, "room_timeout": 7200, "dock_timeout": 600,
@@ -147,6 +148,9 @@ class Engine:
         self.log = d.get("log", [])[-60:]
         self.manual = False  # Never restore permission to run in an occupied house.
         self.allow_home = False
+        # Explicit physical/button requests grant permission to THESE jobs only.
+        # Do not persist grants or infer permission from a saved urgent/source flag.
+        self.gesture_requests = {}
         self.away_since = None
         self.reset_deferred = False
         self.wait_reason = "Disabled"
@@ -168,6 +172,34 @@ class Engine:
     def find(self, uid):
         return next((j for j in self.jobs if j["uid"] == uid), None)
 
+    def is_immediate(self, uid):
+        job = self.find(uid)
+        return bool(job and job["status"] == "needs_action" and uid in self.gesture_requests)
+
+    def immediate_jobs(self):
+        return [job for job in self.jobs if self.is_immediate(job["uid"])]
+
+    def _order_immediate(self):
+        # Stable within each tier: gestures cannot accidentally unleash or be
+        # starved behind the ordinary daily queue. Moving items within a tier works.
+        self.jobs.sort(key=lambda job: not (job["status"] == "needs_action"
+                                          and job["uid"] in self.gesture_requests))
+
+    def request_immediate(self, uid, now):
+        job = self.find(uid)
+        if not job or job["status"] != "needs_action":
+            raise ValueError("Only a pending room can be requested immediately")
+        if self.active and self.active["uid"] == uid:
+            return
+        self.gesture_requests[uid] = now
+        self.jobs.remove(job)
+        self.jobs.insert(0, job)
+        self._order_immediate()
+        self.note("Switch/button request: clean this room even while home", now)
+
+    def clear_immediate(self):
+        self.gesture_requests.clear()
+
     def enqueue(self, area, rooms, now, urgent=False, source="dashboard"):
         r = rooms.get(area)
         if not r or not r.get("cleanable"):
@@ -188,6 +220,7 @@ class Engine:
         if urgent and (not self.active or self.active["uid"] != j["uid"]):
             self.jobs.remove(j)
             self.jobs.insert(0, j)
+        self._order_immediate()
         self.note(f"Queued {r['name']}" + (" as next room" if urgent else ""), now)
         return j["uid"]
 
@@ -202,17 +235,20 @@ class Engine:
         self.jobs.remove(job)
         pos = 0 if previous_uid is None else next(i + 1 for i, j in enumerate(self.jobs) if j["uid"] == previous_uid)
         self.jobs.insert(pos, job)
+        self._order_immediate()
 
     def remove(self, uid):
         if self.active and self.active["uid"] == uid:
             raise ValueError("Dock/pause Dobby before removing the current room")
         self.jobs = [j for j in self.jobs if j["uid"] != uid]
+        self.gesture_requests.pop(uid, None)
 
     def reset(self, day, rooms, now):
         if self.active:
             self.reset_deferred = True
             return False
         self.jobs = []
+        self.clear_immediate()
         self.day = day
         for r in sorted(rooms.values(), key=lambda r: (r.get("priority", 100), r["name"].casefold())):
             if r.get("daily") and r.get("cleanable"):
@@ -222,7 +258,7 @@ class Engine:
         self.note("Restored daily rooms and default order", now)
         return True
 
-    def abort(self, reason, now, latch=False):
+    def abort(self, reason, now, latch=False, keep_immediate=False):
         if latch:
             self.fault = reason
         if self.active and self.active["phase"] != "aborting":
@@ -230,6 +266,8 @@ class Engine:
                                dock_issued=0, dock_attempts=0)
             self.note(reason, now)
         self.manual = self.allow_home = False
+        if not keep_immediate:
+            self.clear_immediate()
 
     def fault_effect(self, effect, error, now):
         self.fault = f"{effect}: {error}"
@@ -270,6 +308,7 @@ class Engine:
                      mopping_skipped=True, fallback_reason=a.get("fallback_reason", ""))
         j.update(status="completed", completed_at=now, reason=reason, result="manual_confirmation")
         j.pop("force_vacuum_reason", None)
+        self.gesture_requests.pop(uid, None)
         if a:
             self.active = None
             self.fault = ""
@@ -371,27 +410,37 @@ class Engine:
                 self.away_since = now
         else:
             self.away_since = None
+        if not cfg.get("gesture_start_immediately", True):
+            self.clear_immediate()
         day = cleaning_day(local_now, cfg["reset_time"])
         if day != self.day:
             self.reset(day, rooms, now)
         if self.active:
             a = self.active
+            immediate = self.is_immediate(a["uid"])
             if a["phase"] != "aborting":
                 reason = ""
                 if home is None:
                     reason = "Home presence unavailable; returning to dock"
-                elif home and not self.allow_home:
+                elif home and not (self.allow_home or immediate):
                     reason = "Someone arrived home; room remains pending"
-                elif not (self.enabled or self.manual):
+                elif not (self.enabled or self.manual or immediate):
                     reason = "Scheduler paused; room remains pending"
-                elif not in_window(local_now, cfg["window_start"], cfg["window_end"]):
+                elif not immediate and not in_window(local_now, cfg["window_start"], cfg["window_end"]):
                     reason = "Cleaning window ended; room remains pending"
                 elif t.get("blockers"):
                     reason = "A pause/blocking entity became active"
                 elif t.get("map_name") != a["map_name"]:
                     reason = "Active map changed during the job"
                 if reason:
-                    self.abort(reason, now)
+                    # A normal run stops on arrival/window close as before, but
+                    # explicit requests for OTHER rooms remain eligible afterwards.
+                    keep = not immediate and reason in (
+                        "Someone arrived home; room remains pending",
+                        "Scheduler paused; room remains pending",
+                        "Cleaning window ended; room remains pending",
+                    )
+                    self.abort(reason, now, keep_immediate=keep)
                     a = self.active
             if a["phase"] == "aborting":
                 self.wait_reason = a["reason"]
@@ -399,8 +448,9 @@ class Engine:
                     # A just-sent clean command can still LOOK docked in cached
                     # telemetry. Explicitly cancel/dock once before permitting
                     # any replacement job, then wait for a settled dock reading.
-                    if home is None or (home and not self.allow_home) or t.get("blockers"):
+                    if home is None or (home and not (self.allow_home or self.is_immediate(a["uid"]))) or t.get("blockers"):
                         self.manual = self.allow_home = False
+                        self.clear_immediate()
                     if t.get("connected") and not a.get("dock_attempts"):
                         a["dock_issued"], a["dock_attempts"] = now, 1
                         return [{"kind": "dock"}]
@@ -468,11 +518,13 @@ class Engine:
                     if job:
                         job["force_vacuum_reason"] = fallback
                     manual, allow_home = self.manual, self.allow_home
+                    gesture_requests = dict(self.gesture_requests)
                     self.abort("Water tank needs attention; returning to dock to restart this room vacuum-only", now)
                     self.active["fallback_redock"] = True
                     # Preserve an existing supervised run permission in-memory;
                     # presence/pause/restart still cancels it normally.
                     self.manual, self.allow_home = manual, allow_home
+                    self.gesture_requests = gesture_requests
                 else:
                     self.abort("Water system needs attention", now, latch=True)
                 return []
@@ -576,22 +628,26 @@ class Engine:
         if self.fault:
             self.wait_reason = self.fault
             return []
-        if not (self.enabled or self.manual):
+        # Select request-only work BEFORE applying the automatic-schedule gates.
+        # Permission is per job, not self.manual/allow_home for the whole queue.
+        self._order_immediate()
+        j = next((j for j in self.jobs if j["status"] == "needs_action"), None)
+        immediate = bool(j and self.is_immediate(j["uid"]))
+        if not (self.enabled or self.manual or immediate):
             self.wait_reason = "Scheduler disabled"
             return []
-        if not in_window(local_now, cfg["window_start"], cfg["window_end"]):
+        if not immediate and not in_window(local_now, cfg["window_start"], cfg["window_end"]):
             self.wait_reason = "Outside the cleaning window"
             return []
         if home is None:
             self.wait_reason = "Home presence unavailable"
             return []
-        if home and not self.allow_home:
+        if home and not (self.allow_home or immediate):
             self.wait_reason = "Waiting for everyone to leave"
             return []
-        if not self.manual and (self.away_since is None or now - self.away_since < cfg["away_minutes"] * 60):
+        if not (self.manual or immediate) and (self.away_since is None or now - self.away_since < cfg["away_minutes"] * 60):
             self.wait_reason = "Waiting for the away delay"
             return []
-        j = next((j for j in self.jobs if j["status"] == "needs_action"), None)
         if not j:
             self.manual = self.allow_home = False
             self.wait_reason = "Today's queue is complete"
@@ -604,6 +660,7 @@ class Engine:
         mode, fallback = self.run_mode(t, cfg, r, j)
         self.active = {"uid": j["uid"], "area_id": r["area_id"], "name": r["name"],
                        "mode": mode, "requested_mode": r["mode"],
+                       "start_policy": "gesture" if immediate else "manual" if self.manual else "automatic",
                        "water_fallback": bool(fallback), "fallback_reason": fallback,
                        "map_name": r["map_name"], "map_flag": r["map_flag"],
                        "segments": r["segments"], "phase": "preparing", "phase_at": now,
@@ -628,5 +685,6 @@ class Engine:
                      fallback_reason=a.get("fallback_reason", ""),
                      result="vacuum_only_water_fallback" if skipped else "completed")
             j.pop("force_vacuum_reason", None)
+        self.gesture_requests.pop(a["uid"], None)
         self.note("Completed " + a["name"] + (" - vacuumed only, mopping skipped" if skipped else ""), now)
         self.active = None
