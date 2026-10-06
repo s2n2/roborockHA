@@ -1,0 +1,12 @@
+Dobby Scheduler 0.1.6: local validation
+Source baseline: supplied roborockHA_v0.1.5.zip. Live GitHub fetch did not succeed.
+Python: 322 passing pytest tests. Python version: 3.13.5
+Browser: 88 checks (21 general + 21 activity + 20 gestures + 5 startup + 21 fallback).
+Responsive layout: 102 assertions passed.
+Node registration: 11 checks passed.
+Compilation, JavaScript syntax and offline repository validation passed.
+All tests use simulated HA backends or pure telemetry. No live HA, robot or HACS/hassfest run.
+Existing storage schema/domain/entry IDs retained; update adds a default-on setting and optional job-result fields.
+Old saved water faults are not auto-cleared: Retry while docked once after update.
+Current-year dates reflect this build environment; queue still uses HA local clock.
+No GitHub upload or live Home Assistant change performed.

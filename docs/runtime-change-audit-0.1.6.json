@@ -1,0 +1,30 @@
+{
+  "custom_components/dobby_scheduler/const.py": {
+    "old_sha256": "2812a00d2ed180a8e69022fdd491b466571e5d889361d2c6fbe58056e08b9744",
+    "new_sha256": "ef69acc3dc8cbdf19b39998993a4d9c3f5895e5b0a1ef70c920be4c65b5a21bd"
+  },
+  "custom_components/dobby_scheduler/controller.py": {
+    "old_sha256": "48062d7e4b3d53eca390099b92ff13eef4b4e1bc1be746f4a9ccaa4dc75f4c3e",
+    "new_sha256": "1cabcfbe5590be27b797f259db186763f5e60640f7bdf25794c5fc9f6b4e02a0"
+  },
+  "custom_components/dobby_scheduler/engine.py": {
+    "old_sha256": "92c4e1b658af108c74be71a167e5270037197e123a4d9d73da6bdf2e1419d894",
+    "new_sha256": "5811c39d4f7cb389662380f66c553d9fe162c26c276a7a9caf3d0dc512e520dd"
+  },
+  "custom_components/dobby_scheduler/frontend/dobby-scheduler-card.js": {
+    "old_sha256": "a90dbd5bf77b63848ff32bbb223c6ae8656ce00a955e0f8ef65218c4a528f73c",
+    "new_sha256": "f16cb6c75145e90028814d3767e27afd6057acb758309a288c9b22a40080ca51"
+  },
+  "custom_components/dobby_scheduler/manifest.json": {
+    "old_sha256": "a3862bf90cfd50e67c35e0d43c9f47f06394e7dd44fd32e13d2d68ea1e1d02ef",
+    "new_sha256": "b05325c22983d86d9049d3660ac957d5f7076ba9cb10ed6ff623ec3aba9d2194"
+  },
+  "custom_components/dobby_scheduler/sensor.py": {
+    "old_sha256": "ba4097f125a948f5aebcefa3bcd7f59754220aedee83917e193deeda957ad78a",
+    "new_sha256": "2281dc9dcd664b6af239c12bf31c53cfbb527c09f7dc39c8a21d60a4f0acc991"
+  },
+  "custom_components/dobby_scheduler/todo.py": {
+    "old_sha256": "5e72cbf6385452398dd162ea36a04e7b6efa708be2cda9538e751fefc1dd51b6",
+    "new_sha256": "6b43f71caae646f3f9d0f8d942a388bde8ee178f94c7731dbfcc60cdb9eeddfb"
+  }
+}

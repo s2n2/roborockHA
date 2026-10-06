@@ -21,7 +21,13 @@ class DobbyStatus(DobbyEntity, SensorEntity):
                 "next_room": next((c.rooms.get(j["area_id"], {}).get("name", j["area_id"]) for j in c.engine.jobs
                                   if j["status"] == "needs_action" and j["uid"] != (c.engine.active or {}).get("uid")), None),
                 "cleaning_day": c.engine.day, "fault": c.engine.fault, "backend": c.backend_detail,
-                "reset_deferred": c.engine.reset_deferred}
+                "reset_deferred": c.engine.reset_deferred,
+                "requested_mode": (c.engine.active or {}).get("requested_mode"),
+                "effective_mode": (c.engine.active or {}).get("mode"),
+                "water_fallback": (c.engine.active or {}).get("water_fallback", False),
+                "fallback_reason": (c.engine.active or {}).get("fallback_reason", ""),
+                "mopping_skipped_rooms": [c.rooms.get(j["area_id"], {}).get("name", j["area_id"])
+                    for j in c.engine.jobs if j["status"] == "completed" and j.get("mopping_skipped")]}
 
 class DobbyCount(DobbyEntity, SensorEntity):
     _attr_icon = "mdi:format-list-checks"
@@ -68,6 +74,10 @@ class DobbyActivity(DobbyEntity, SensorEntity):
             "room_source": a.get("sources", {}).get("current_room_entity"),
             "status_source": a.get("sources", {}).get("status_entity"),
             "water_problems": a.get("water_problems", []),
+            "requested_mode": (c.engine.active or {}).get("requested_mode"),
+            "effective_mode": (c.engine.active or {}).get("mode"),
+            "water_fallback": (c.engine.active or {}).get("water_fallback", False),
+            "fallback_reason": (c.engine.active or {}).get("fallback_reason", ""),
         }
 
 

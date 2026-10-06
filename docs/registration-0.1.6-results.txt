@@ -1,0 +1,17 @@
+{
+  "passed": 11,
+  "checks": [
+    "reproduces 0.1.1: picker entry present but active-registry element missing",
+    "warm frontend: card registered and stub available",
+    "duplicate module import: same constructor and one picker entry",
+    "cold frontend: no early native registration and no phantom picker entry",
+    "registry replacement: registers with final registry and final HTMLElement",
+    "two simultaneous early imports: one final registration",
+    "module between polyfill and HA root: waits then registers",
+    "no registry replacement: delayed HA root still works",
+    "stale picker metadata repaired without a duplicate",
+    "existing older registered card: kept intact with explicit refresh warning",
+    "registration failure: diagnostic error and no advertised unusable card"
+  ],
+  "scope": "Mocked browser registry transition; not a live Home Assistant or robot test."
+}

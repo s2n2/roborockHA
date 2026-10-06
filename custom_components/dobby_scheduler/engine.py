@@ -22,6 +22,7 @@ DEFAULTS = {
     "gesture_seconds": 2.0, "gesture_cooldown": 5.0,
     "reject_automation_context": True, "acknowledge": True,
     "empty_after_room": True, "empty_after_mop": True,
+    "vacuum_on_water_problem": True,
     "start_timeout": 300, "room_timeout": 7200, "dock_timeout": 600,
     "proof_timeout": 240, "empty_timeout": 240, "dock_settle": 10,
     "mop_intensity_entity": "", "mop_intensity": "medium",
@@ -180,6 +181,10 @@ class Engine:
         elif not self.active or self.active["uid"] != j["uid"]:
             j.update(status="needs_action", completed_at=None, source=source,
                      requested_at=now, reason="", urgent=urgent)
+            # A repeat is a NEW attempt using the room's current labels/water state.
+            for key in ("requested_mode", "executed_mode", "mopping_skipped",
+                        "fallback_reason", "result", "force_vacuum_reason"):
+                j.pop(key, None)
         if urgent and (not self.active or self.active["uid"] != j["uid"]):
             self.jobs.remove(j)
             self.jobs.insert(0, j)
@@ -257,8 +262,15 @@ class Engine:
             raise ValueError("Queue item no longer exists")
         if self.active and self.active["uid"] != uid:
             raise ValueError("Another job is still active")
-        j.update(status="completed", completed_at=now, reason="Manually confirmed by a user")
-        if self.active and self.active["uid"] == uid:
+        reason = "Manually confirmed by a user"
+        a = self.active if self.active and self.active["uid"] == uid else None
+        if a and a.get("water_fallback"):
+            reason += " - vacuum only; mopping skipped (not automatic robot proof)"
+            j.update(requested_mode=a.get("requested_mode"), executed_mode=a["mode"],
+                     mopping_skipped=True, fallback_reason=a.get("fallback_reason", ""))
+        j.update(status="completed", completed_at=now, reason=reason, result="manual_confirmation")
+        j.pop("force_vacuum_reason", None)
+        if a:
             self.active = None
             self.fault = ""
         self.note("User manually marked a room complete", now)
@@ -287,7 +299,29 @@ class Engine:
                 number(record.get("error")) == 0 and
                 (number(record.get("area")) or 0) > 0)
 
-    def _preflight(self, t, cfg, r):
+    @staticmethod
+    def water_fallback_allowed(t, cfg):
+        """Only confirmed tank alerts; callers retain all general robot/error checks."""
+        return (cfg.get("vacuum_on_water_problem", True)
+                and t.get("water_problem") is True
+                and t.get("water_status_known") is True
+                and not t.get("wet_ok", False))
+
+    @staticmethod
+    def run_mode(t, cfg, room, job=None):
+        """Choose a per-attempt mode without changing Area labels or room settings."""
+        requested = (room or {}).get("mode")
+        if requested not in ("mop", "vac_and_mop"):
+            return requested, ""
+        if cfg.get("vacuum_on_water_problem", True):
+            forced = (job or {}).get("force_vacuum_reason", "")
+            if forced:
+                return "vacuum", forced
+            if Engine.water_fallback_allowed(t, cfg):
+                return "vacuum", "Water tank needs attention; mopping skipped"
+        return requested, ""
+
+    def _preflight(self, t, cfg, r, job=None):
         if not r or not r.get("cleanable"):
             return "Next room is not labelled dobby_cleanable"
         if not r.get("mode"):
@@ -314,11 +348,14 @@ class Engine:
             return "Old Dobby scheduling automations are still enabled"
         if not t.get("record_supported"):
             return "No reliable completed-clean record is available; see Diagnostics"
-        if r["mode"] not in t.get("mode_options", []):
+        mode, fallback = self.run_mode(t, cfg, r, job)
+        if mode not in t.get("mode_options", []):
             return "Cleaning-mode selector does not support the requested mode"
-        if r["mode"] != "vacuum" and not t.get("wet_ok", False):
+        if mode != "vacuum" and not t.get("wet_ok", False):
             return "Mop/water sensor unavailable or water system needs attention"
-        if cfg["empty_after_room"] and (r["mode"] != "mop" or cfg["empty_after_mop"]):
+        if fallback and cfg.get("wash_entity") and t.get("washing") is None:
+            return "Waiting for mop-wash state before vacuum-only fallback"
+        if cfg["empty_after_room"] and (mode != "mop" or cfg["empty_after_mop"]):
             if t.get("emptying") is None:
                 return "Dust-emptying switch unavailable or not configured"
         if t.get("emptying") or t.get("washing"):
@@ -358,6 +395,27 @@ class Engine:
                     a = self.active
             if a["phase"] == "aborting":
                 self.wait_reason = a["reason"]
+                if a.get("fallback_redock"):
+                    # A just-sent clean command can still LOOK docked in cached
+                    # telemetry. Explicitly cancel/dock once before permitting
+                    # any replacement job, then wait for a settled dock reading.
+                    if home is None or (home and not self.allow_home) or t.get("blockers"):
+                        self.manual = self.allow_home = False
+                    if t.get("connected") and not a.get("dock_attempts"):
+                        a["dock_issued"], a["dock_attempts"] = now, 1
+                        return [{"kind": "dock"}]
+                    dock_ready = (t.get("connected") and t.get("vacuum") == "docked"
+                        and (not cfg.get("empty_entity") or t.get("emptying") is False)
+                        and (not cfg.get("wash_entity") or t.get("washing") is False)
+                        and not t.get("emptying") and not t.get("washing"))
+                    if dock_ready and a.get("dock_attempts") and not self.fault:
+                        a.setdefault("fallback_docked_since", now)
+                        if now - a["fallback_docked_since"] < cfg["dock_settle"]:
+                            return []
+                    else:
+                        a.pop("fallback_docked_since", None)
+                        if t.get("vacuum") == "docked":
+                            return []
                 if t.get("vacuum") == "docked" and not t.get("emptying") and not t.get("washing"):
                     j = self.find(a["uid"])
                     if j:
@@ -381,12 +439,56 @@ class Engine:
             if t.get("error") != "ok":
                 self.abort("Vacuum error or error reading unavailable", now, latch=True)
                 return []
-            if a["mode"] != "vacuum" and not t.get("wet_ok", False):
-                self.abort("Water system needs attention", now, latch=True)
+            # A tank can become empty just AFTER a successful wet clean. Accept
+            # the usual proof first, then finish its normal dock/empty sequence.
+            record = t.get("record") or {}
+            if (a.get("seen_cleaning") and self.record_matches(a, record, now)
+                    and self.record_success(record)):
+                a["proved"] = True
+                a["record"] = record
+            if (a["mode"] != "vacuum" and not a.get("proved")
+                    and not t.get("wet_ok", False)):
+                if self.water_fallback_allowed(t, cfg):
+                    fallback = "Water tank needs attention; mopping skipped"
+                    if a["phase"] == "preparing" and a.get("command_at") is None:
+                        # No room command has been sent yet. Switch and CONFIRM
+                        # vacuum mode before sending it; never set mop water flow.
+                        if "vacuum" not in t.get("mode_options", []):
+                            self.fault_effect("set_mode", "Vacuum-only fallback is not supported", now)
+                            return []
+                        a.update(requested_mode=a.get("requested_mode", a["mode"]),
+                                 mode="vacuum", water_fallback=True,
+                                 fallback_reason=fallback, phase_at=now)
+                        a.pop("water_setting_sent", None)
+                        self.note(f"{a['name']}: switching to vacuum only; mopping skipped", now)
+                        return [{"kind": "set_mode", "option": "vacuum"}]
+                    # Never change a running segment command into a different
+                    # job in-place. Dock first, then start a fresh dry attempt.
+                    job = self.find(a["uid"])
+                    if job:
+                        job["force_vacuum_reason"] = fallback
+                    manual, allow_home = self.manual, self.allow_home
+                    self.abort("Water tank needs attention; returning to dock to restart this room vacuum-only", now)
+                    self.active["fallback_redock"] = True
+                    # Preserve an existing supervised run permission in-memory;
+                    # presence/pause/restart still cancels it normally.
+                    self.manual, self.allow_home = manual, allow_home
+                else:
+                    self.abort("Water system needs attention", now, latch=True)
                 return []
             if a["phase"] == "preparing":
                 self.wait_reason = "Setting cleaning mode"
                 if t.get("mode") == a["mode"]:
+                    if a.get("water_fallback"):
+                        if cfg.get("wash_entity") and t.get("washing") is None:
+                            self.wait_reason = "Waiting for mop-wash state before vacuum-only fallback"
+                            return []
+                        if t.get("washing") or t.get("emptying"):
+                            self.wait_reason = "Waiting for dock service to finish"
+                            return []
+                        if cfg["empty_after_room"] and t.get("emptying") is None:
+                            self.wait_reason = "Dust-emptying switch unavailable or not configured"
+                            return []
                     if a["mode"] != "vacuum" and cfg.get("mop_intensity_entity"):
                         if t.get("mop_intensity") != cfg["mop_intensity"]:
                             if not a.get("water_setting_sent"):
@@ -495,25 +597,36 @@ class Engine:
             self.wait_reason = "Today's queue is complete"
             return []
         r = rooms.get(j["area_id"])
-        error = self._preflight(t, cfg, r)
+        error = self._preflight(t, cfg, r, j)
         if error:
             self.wait_reason = error
             return []
+        mode, fallback = self.run_mode(t, cfg, r, j)
         self.active = {"uid": j["uid"], "area_id": r["area_id"], "name": r["name"],
-                       "mode": r["mode"], "map_name": r["map_name"], "map_flag": r["map_flag"],
+                       "mode": mode, "requested_mode": r["mode"],
+                       "water_fallback": bool(fallback), "fallback_reason": fallback,
+                       "map_name": r["map_name"], "map_flag": r["map_flag"],
                        "segments": r["segments"], "phase": "preparing", "phase_at": now,
                        "command_at": None, "seen_cleaning": False, "proved": False,
                        "interrupted": False, "empty_seen": False, "empty_finished": False,
                        "start_timeout": cfg["start_timeout"]}
-        self.note(f"Starting {r['name']} ({r['mode']})", now)
-        self.wait_reason = "Setting cleaning mode"
-        return [{"kind": "set_mode", "option": r["mode"]}]
+        self.note(f"Starting {r['name']} ({mode})" + ("; " + fallback if fallback else ""), now)
+        self.wait_reason = "Setting vacuum-only fallback" if fallback else "Setting cleaning mode"
+        return [{"kind": "set_mode", "option": mode}]
 
     def _complete(self, now):
         a = self.active
         j = self.find(a["uid"])
+        skipped = bool(a.get("water_fallback"))
         if j:
-            j.update(status="completed", completed_at=now,
-                     reason="Successful clean record + dock + required emptying confirmed")
-        self.note("Completed " + a["name"], now)
+            reason = "Successful clean record + dock + required emptying confirmed"
+            if skipped:
+                reason = "Vacuumed only; mopping skipped because the water tank needs attention. " + reason
+            j.update(status="completed", completed_at=now, reason=reason,
+                     requested_mode=a.get("requested_mode", a["mode"]),
+                     executed_mode=a["mode"], mopping_skipped=skipped,
+                     fallback_reason=a.get("fallback_reason", ""),
+                     result="vacuum_only_water_fallback" if skipped else "completed")
+            j.pop("force_vacuum_reason", None)
+        self.note("Completed " + a["name"] + (" - vacuumed only, mopping skipped" if skipped else ""), now)
         self.active = None

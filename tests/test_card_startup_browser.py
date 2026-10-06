@@ -65,7 +65,7 @@ def run():
                 catalog:window.customCards.filter(x=>x.type==='dobby-scheduler-card').length,
                 stage:window.dobbySchedulerCardStatus.stage, version:C.version};
             }""")
-            assert result == dict(correctBase=True,hasShadow=True,hasMain=True,catalog=1,stage='registered',version='0.1.5'), result
+            assert result == dict(correctBase=True,hasShadow=True,hasMain=True,catalog=1,stage='registered',version='0.1.6'), result
 
         value = page()
         value.add_script_tag(content=OLD_PATTERN, type='module')

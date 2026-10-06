@@ -492,6 +492,22 @@ this record through its coordinator. Any incompatible layout fails closed.
             "sources": dict(sources),
         }
 
+    def water_status(self):
+        """A tank alert and an unavailable tank sensor must not be conflated.
+
+        Only the configured water-problem inputs participate. These inputs are
+        mop limitations, NOT a catch-all list of vacuum/dock faults.
+        """
+        states = {entity: self.boolean(entity, absent=None)
+                  for entity in self.settings["water_problem_entities"]}
+        return {
+            "wet_ok": all(value is False for value in states.values()),
+            "water_problem": any(value is True for value in states.values()),
+            "water_status_known": all(value is not None for value in states.values()),
+            "water_problem_sources": [entity for entity, value in states.items() if value is True],
+            "water_unavailable_sources": [entity for entity, value in states.items() if value is None],
+        }
+
     def telemetry(self):
         c = self.settings
         state = self.hass.states.get(c["vacuum_entity"]) if c["vacuum_entity"] else None
@@ -510,7 +526,7 @@ this record through its coordinator. Any incompatible layout fails closed.
              "map_name": map_name, "map_flag": flag,
              "emptying": self.boolean(c["empty_entity"], absent=None),
              "washing": self.boolean(c["wash_entity"], absent=False),
-             "wet_ok": all(self.boolean(e, absent=None) is False for e in c["water_problem_entities"]),
+             **self.water_status(),
              "blockers": any(self.boolean(e, absent=None) is not False for e in c["blocking_entities"]),
              "record": record, "record_supported": supported, "legacy": self.legacy(),
              "mop_intensity": self.raw(c["mop_intensity_entity"]),
@@ -583,13 +599,26 @@ this record through its coordinator. Any incompatible layout fails closed.
         jobs = []
         for j in self.engine.jobs:
             r = self.rooms.get(j["area_id"], {})
+            active = self.engine.active if (self.engine.active or {}).get("uid") == j["uid"] else None
+            if active:
+                effective, fallback = active["mode"], active.get("fallback_reason", "")
+                requested = active.get("requested_mode", r.get("mode"))
+            elif j["status"] == "completed":
+                effective, fallback = j.get("executed_mode", r.get("mode")), j.get("fallback_reason", "")
+                requested = j.get("requested_mode", r.get("mode"))
+            else:
+                effective, fallback = self.engine.run_mode(self.last_telemetry, self.settings, r, j)
+                requested = r.get("mode")
             jobs.append({**j, "name": r.get("name", j["area_id"]), "mode": r.get("mode"),
+                         "requested_mode": requested, "effective_mode": effective,
+                         "water_fallback": bool(fallback), "fallback_reason": fallback,
                          "segments": r.get("segments", []), "map_name": r.get("map_name", ""),
                          "priority": r.get("priority", 100), "mapping_error": r.get("mapping_error", "")})
         out = {"version": VERSION, "entry_id": self.entry.entry_id, "name": self.entry.title,
                "enabled": self.engine.enabled, "manual": self.engine.manual,
                "active": deepcopy(self.engine.active), "reason": self.engine.wait_reason,
                "fault": self.engine.fault, "day": self.engine.day, "jobs": jobs,
+               "vacuum_on_water_problem": self.settings["vacuum_on_water_problem"],
                "rooms": list(self.rooms.values()), "maps": self.maps, "maps_at": self.maps_at,
                "telemetry": self.last_telemetry, "backend": self.backend_detail,
                "activity": deepcopy(self.activity),

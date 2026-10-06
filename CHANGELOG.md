@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.6 - Vacuum-only fallback for tank alerts
+
+- Default-on UI option: vacuum instead of mopping for confirmed configured tank alerts.
+- Preserve room labels; keep unknown-source and general fault checks.
+- Explicitly dock/cancel before restarting a wet attempt as dry; settle and confirm mode.
+- Normal proof/dock/dust-empty rules remain required for automatic completion.
+- Show requested versus effective mode; retain skipped-mopping results in daily history.
+- Add fallback attributes to reusable sensors and native to-do descriptions.
+- Saved older water faults still require one explicit Retry while docked.
+- 322 Python tests, 88 browser checks, 102 layout assertions and 11 registration checks passed locally with simulated data.
+
 ## 0.1.5 - Reusable activity and confirmed rooms
 
 - Added Activity and Confirmed room text sensors with unique IDs.

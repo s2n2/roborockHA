@@ -1,4 +1,17 @@
-# Dobby Scheduler 0.1.5
+# Dobby Scheduler 0.1.6
+
+## 0.1.6: keep cleaning when a water tank needs attention
+
+Confirmed configured water-tank alerts now make mop and vacuum+mop rooms run
+**vacuum-only** by default. The mode is confirmed before dispatch; labels remain
+unchanged. A mid-run shortage docks the robot before a fresh dry attempt. The
+queue explicitly records **Vacuumed only - mop skipped** after normal successful
+clean/dock/empty verification, rather than claiming the room was mopped.
+
+The option is in **Robot & schedule**, beneath the water-problem inputs.
+Unknown water readings and unrelated robot faults are not ignored. After an
+upgrade, a saved water fault needs **Retry after checking** once while docked.
+See [UPGRADE_0.1.6.md](UPGRADE_0.1.6.md) for exact behaviour and installation.
 
 ## 0.1.5: reusable robot activity and one-minute room confirmation
 
@@ -139,7 +152,7 @@ Select the vacuum, then click **Find controls for this vacuum**. This suggests e
 
 Required sources are: the vacuum, an on/off presence entity (`on` means someone home), cleaning-mode selector, vacuum-error sensor, and battery reading (a configured battery sensor or the vacuum's `battery_level` attribute). Select the current-map selector if exposed. Configure the dust-emptying switch when using empty-after-room, and the mop-washing switch on a mop-washing dock. Without a map selector, the adapter must supply a current map ID.
 
-Water-problem sensors are on/off sensors with `on = problem`; these block only wet jobs. Add optional pause helpers such as a babysitter, holiday or manual-block helper. Any configured blocking helper that is on or unavailable prevents running. It does not silently infer children/guests from two adults being away: your presence entity must reflect the household policy you want.
+Water-problem sensors are on/off tank inputs with `on = problem`. By default, confirmed tank alerts make wet jobs vacuum-only for that run; unavailable inputs still block wet jobs. Disable the fallback in Robot & schedule to restore strict water blocking. Add optional pause helpers such as a babysitter, holiday or manual-block helper. Any configured blocking helper that is on or unavailable prevents running. It does not silently infer children/guests from two adults being away: your presence entity must reflect the household policy you want.
 
 Defaults: 15-minute absence, 40% minimum battery, 08:00-21:00 cleaning window, 00:05 nightly reset, two-second gesture window, five-second gesture cooldown. Times use Home Assistant's local timezone. Run now bypasses the absence delay, not the cleaning window or hardware/mapping checks; it asks before running while someone is home.
 

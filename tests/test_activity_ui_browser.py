@@ -43,11 +43,11 @@ def run():
             assert state in page.locator('.activity-summary').inner_text();checks.append('renders '+state)
         page.set_viewport_size({'width':390,'height':844})
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');checks.append('activity card fits 390px viewport')
-        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/activity-0.1.5-mobile.png'))
+        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/activity-0.1.6-mobile.png'))
         page.locator('[data-action=setup]').first.click();page.locator('[data-action=tab][data-id=settings]').click()
         page.locator('[data-cfg=room_confirm_seconds]').scroll_into_view_if_needed()
         assert page.locator('dialog').evaluate('(d)=>d.scrollWidth<=d.clientWidth+1');checks.append('activity settings fit mobile popup')
-        page.locator('dialog').screenshot(path=str(ROOT/'docs/previews/activity-0.1.5-settings.png'))
+        page.locator('dialog').screenshot(path=str(ROOT/'docs/previews/activity-0.1.6-settings.png'))
         page.locator('[data-action=close]').click()
         page.evaluate("demo.activity.text='<img src=x onerror=alert(1)>';document.querySelector('dobby-scheduler-card').refresh();")
         page.wait_for_timeout(100)
@@ -56,7 +56,7 @@ def run():
         assert not errors,errors;checks.append('no browser JavaScript exceptions')
         browser.close()
     result={'checks_passed':len(checks),'checks':checks,'browser_errors':errors,'scope':'Headless Chromium with mocked HA data, not a live robot or HA install'}
-    (ROOT/'docs/activity-ui-0.1.5-results.json').write_text(json.dumps(result,indent=2))
+    (ROOT/'docs/activity-ui-0.1.6-results.json').write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))
 
 if __name__=='__main__': run()

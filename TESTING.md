@@ -1,3 +1,24 @@
+# Latest validation: 0.1.6
+
+Read UPGRADE_0.1.6.md and docs/validation-0.1.6.txt. Current local run:
+322 Python tests, 88 browser checks, 102 layout assertions and 11 Node
+registration checks. No live Home Assistant instance or robot was used.
+
+Additional supervised acceptance for this release:
+
+1. Confirm a configured tank-problem input is on (not unavailable). While docked,
+   request one wet-labelled room. Verify actual vacuum mode before it leaves.
+2. Confirm the room label did not change, the card reports vacuum-only fallback,
+   and only successful completion/docking/emptying marks it done with mop skipped.
+3. Restore water. Confirm a different pending room uses its labelled wet mode;
+   the already completed dry room must not silently repeat.
+4. Check an unrelated robot fault or unknown sensor still produces a visible wait.
+5. When naturally encountered under supervision, a mid-clean tank shortage must
+   dock before a fresh dry attempt; it must not start overlapping room commands.
+   Do not simulate faults by unsafe hardware manipulation while it is running.
+
+Historical validation notes follow; they are not extra hardware tests.
+
 # Latest validation: 0.1.5
 
 See UPGRADE_0.1.5.md and docs/validation-0.1.5.txt for this release's checks.

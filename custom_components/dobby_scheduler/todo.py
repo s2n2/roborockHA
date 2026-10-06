@@ -37,10 +37,18 @@ class DobbyTodo(DobbyEntity, TodoListEntity):
         items = []
         for j in self.controller.engine.jobs:
             r = self.controller.rooms.get(j["area_id"], {})
+            a = self.controller.engine.active
+            a = a if a and a["uid"] == j["uid"] else {}
             description = json.dumps({"area_id": j["area_id"], "mode": r.get("mode"),
                                       "map": r.get("map_name"), "segments": r.get("segments", []),
                                       "default_priority": r.get("priority", 100), "source": j.get("source"),
-                                      "reason": j.get("reason", ""), "note": j.get("note", "")}, indent=2)
+                                      "reason": j.get("reason", ""), "note": j.get("note", ""),
+                                      "requested_mode": a.get("requested_mode", j.get("requested_mode", r.get("mode"))),
+                                      "effective_mode": a.get("mode", j.get("executed_mode", r.get("mode"))),
+                                      "executed_mode": j.get("executed_mode"),
+                                      "mopping_skipped": j.get("mopping_skipped", False),
+                                      "result": j.get("result", ""),
+                                      "fallback_reason": a.get("fallback_reason", j.get("fallback_reason", ""))}, indent=2)
             args = {"summary": r.get("name", j["area_id"]), "uid": j["uid"],
                     "status": TodoItemStatus.COMPLETED if j["status"] == "completed" else TodoItemStatus.NEEDS_ACTION,
                     "description": description}

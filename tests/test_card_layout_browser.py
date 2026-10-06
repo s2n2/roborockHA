@@ -45,7 +45,7 @@ customElements.define('ha-icon',class extends HTMLElement{
 def mount(page,data,width=360,viewport=1440,dark=False,source=JS):
     page.set_viewport_size({'width':viewport,'height':1000})
     theme='--primary-color:#73cabe;--primary-text-color:#e5ecec;--secondary-text-color:#9faeb1;--card-background-color:#202729;--secondary-background-color:#272f32;--divider-color:#3b484b;--text-primary-color:#14201f;' if dark else '--primary-color:#147d75;--primary-text-color:#24393d;--secondary-text-color:#64767b;--card-background-color:white;--secondary-background-color:#f4f7f7;--divider-color:#dfe7e7;'
-    page.set_content('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:16px;font:28px Arial;background:'+('#111819' if dark else '#edf2f3')+';'+theme+'}main{width:'+str(width)+'px;max-width:100%;margin:0 auto}.label{font:10px Arial;color:'+('#acbabb' if dark else '#6b8087')+';text-align:center;margin-bottom:12px;letter-spacing:.08em}</style></head><body><main><div class="label">SIMULATED PREVIEW - DOBBY 0.1.5</div><dobby-scheduler-card></dobby-scheduler-card></main></body></html>')
+    page.set_content('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:16px;font:28px Arial;background:'+('#111819' if dark else '#edf2f3')+';'+theme+'}main{width:'+str(width)+'px;max-width:100%;margin:0 auto}.label{font:10px Arial;color:'+('#acbabb' if dark else '#6b8087')+';text-align:center;margin-bottom:12px;letter-spacing:.08em}</style></head><body><main><div class="label">SIMULATED PREVIEW - DOBBY 0.1.6</div><dobby-scheduler-card></dobby-scheduler-card></main></body></html>')
     mock=BASE['MOCK'].replace('window.demo='+json.dumps(DATA)+';', 'window.demo='+json.dumps(data)+';')
     mock=re.sub(r"customElements.define\('ha-icon',class extends HTMLElement\{.*?\n\}\);",lambda m:ICONS,mock,count=1,flags=re.S)
     page.add_script_tag(content=mock)
@@ -83,7 +83,7 @@ def run():
             if width==340:
                 box=page.locator('.summary .metric-main').bounding_box();other=page.locator('.summary .metric-complete').bounding_box()
                 check(box['y']<other['y'],'narrow DESKTOP column uses stacked summary')
-                page.locator('main').screenshot(path=str(OUT/'ui-0.1.5-empty.png'))
+                page.locator('main').screenshot(path=str(OUT/'ui-0.1.6-empty.png'))
                 check(page.evaluate("!('rows' in document.querySelector('dobby-scheduler-card').getGridOptions())"),'no forced Sections row count')
             if width==720:
                 box=page.locator('.summary .metric-main').bounding_box();other=page.locator('.summary .metric-complete').bounding_box()
@@ -118,15 +118,15 @@ def run():
                     check(page.locator('.roomlayout section h3').inner_text()=='Lounge',f'mobile Area selector works: {viewport}px')
                     page.locator('#room-choice').select_option('kitchen')
                 if tab=='settings':
-                    check(page.locator('.settings-section').count()==2,f'settings grouped into two sections: {viewport}px')
+                    check(page.locator('.settings-section').count()==3,f'settings grouped into robot, schedule and activity sections: {viewport}px')
                     page.locator('[data-action="save-settings"]').scroll_into_view_if_needed()
                     head=page.locator('.dialoghead').bounding_box()
                     check(head['y']>=0 and head['y']<100,f'popup header stays visible when pane scrolls: {viewport}px')
             if viewport in (390,1440):
                 page.locator('[data-action="tab"][data-id="rooms"]').click()
-                page.locator('dialog').screenshot(path=str(OUT/f'ui-0.1.5-setup-{viewport}.png'))
+                page.locator('dialog').screenshot(path=str(OUT/f'ui-0.1.6-setup-{viewport}.png'))
                 page.locator('[data-action="tab"][data-id="settings"]').click()
-                page.locator('dialog').screenshot(path=str(OUT/f'ui-0.1.5-settings-{viewport}.png'))
+                page.locator('dialog').screenshot(path=str(OUT/f'ui-0.1.6-settings-{viewport}.png'))
             check(page.evaluate('commands.length===0'),f'opening and browsing setup sends no write commands: {viewport}px')
             page.close()
         # Independent theme previews and switch accessibility/dispatch.
@@ -136,12 +136,12 @@ def run():
             check(no_overflow(page)['ok'],f'theme layout: {"dark" if dark else "light"}')
             page.locator('[data-setting="auto"]').check()
             check(page.evaluate("commands.at(-1).action==='enable'&&commands.at(-1).data.enabled===true"),f'automatic switch retains behaviour: {dark}')
-            page.locator('main').screenshot(path=str(OUT/f'ui-0.1.5-populated-{"dark" if dark else "light"}.png'))
+            page.locator('main').screenshot(path=str(OUT/f'ui-0.1.6-populated-{"dark" if dark else "light"}.png'))
             page.close()
         check(not errors,'no browser JavaScript exceptions')
         browser.close()
     result={'checks_passed':len(checks),'checks':checks,'browser_errors':errors,'environment':'System Chromium, mock HA API and icon renderer. Not a live Home Assistant or Dwains dashboard; no robot commands or credentials.'}
-    (ROOT/'docs/layout-0.1.5-test-results.json').write_text(json.dumps(result,indent=2))
+    (ROOT/'docs/layout-0.1.6-test-results.json').write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))
 
 if __name__=='__main__':run()
