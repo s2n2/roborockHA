@@ -2,6 +2,7 @@
 
 The reported location must remain unchanged for the whole confirmation interval.
 Room timers use monotonic time, are not restored, and never prove job completion.
+An unconfirmed owned-job target may appear with an arrow, never as measured location.
 """
 from __future__ import annotations
 
@@ -144,6 +145,7 @@ job's location just because a queue entry or stale map sensor says so.
         self.location = RoomDebouncer()
         self.cleaning_location = RoomDebouncer()
         self.context = None
+        self.cleaning_run = None
 
     def update(self, data: dict, now: float, seconds: float = 60) -> dict:
         seconds = float(seconds)
@@ -155,18 +157,49 @@ job's location just because a queue entry or stale map sensor says so.
             self.cleaning_location.reset()
             self.context = identity
         code, text, icon = classify(data)
+        detail_text = text
+        # Keep activity_code stable for existing automations; shorten only display.
+        text = {
+            "vacuuming_and_mopping": "Vac + mop",
+            "returning": "Returning",
+            "emptying": "Emptying",
+            "moving": "Moving",
+            "updating": "Updating",
+        }.get(code, text)
+        if code == "cleaning" and token(data.get("mode")) == "vacuum":
+            text = "Vacuuming"
         valid = code not in {"unavailable", "not_configured"}
         room = data.get("resolved_room") if valid else None
         self.location.feed(room, now, seconds)
+        display_room = display_room_source = None
         if code in {"cleaning", "mopping", "vacuuming_and_mopping"}:
+            # A new dispatched attempt must not inherit the preceding job's room,
+            # even when a short dock visit was missed between telemetry updates.
+            run = data.get("scheduled_run_id")
+            if run != self.cleaning_run:
+                self.cleaning_location.reset()
+                self.cleaning_run = run
             self.cleaning_location.feed(room, now, seconds)
             if self.cleaning_location.confirmed:
-                text += " " + self.cleaning_location.confirmed
+                display_room = self.cleaning_location.confirmed
+                display_room_source = "confirmed"
+                text += " \u00b7 " + display_room
+                detail_text += " " + display_room
+            elif run and token(data.get("scheduled_room")) not in MISSING:
+                # The adapter only passes a dispatched, non-interrupted owned job.
+                # Arrow means target/job, not a claim of physical presence there.
+                display_room = humanize(data["scheduled_room"])
+                display_room_source = "scheduled"
+                text += " \u2192 " + display_room
+                detail_text += " (scheduled room: " + display_room + ")"
         else:
             self.cleaning_location.reset()
+            self.cleaning_run = None
         actual_room = self.cleaning_location.confirmed
         return {
-            "text": text[:250], "code": code, "icon": icon, "available": code != "unavailable",
+            "text": text[:250], "detail_text": detail_text[:250],
+            "display_room": display_room, "display_room_source": display_room_source,
+            "code": code, "icon": icon, "available": code != "unavailable",
             "room": actual_room, "room_is_current": bool(actual_room and room == actual_room),
             "confirmed_room": self.location.confirmed,
             "confirmed_room_is_current": bool(self.location.confirmed and self.location.confirmed == room),

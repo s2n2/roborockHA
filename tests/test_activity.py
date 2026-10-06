@@ -27,20 +27,20 @@ def changed(**kw):
 
 def test_initial_full_minute_and_no_early_room():
     tr = activity.ActivityTracker()
-    assert tr.update(data(), 100)['text'] == 'Cleaning'
-    assert tr.update(data(), 159.999)['text'] == 'Cleaning'
-    assert tr.update(data(), 160)['text'] == 'Cleaning Kitchen'
+    assert tr.update(data(), 100)['text'] == 'Vacuuming'
+    assert tr.update(data(), 159.999)['text'] == 'Vacuuming'
+    assert tr.update(data(), 160)['text'] == 'Vacuuming \u00b7 Kitchen'
 
 
 def test_passing_through_hallway_keeps_last_confirmed_room():
     tr = activity.ActivityTracker()
     tr.update(data(), 0)
-    assert tr.update(data(), 60)['text'] == 'Cleaning Kitchen'
+    assert tr.update(data(), 60)['text'] == 'Vacuuming \u00b7 Kitchen'
     brief = tr.update(changed(resolved_room='Hallway'), 70)
-    assert brief['text'] == 'Cleaning Kitchen' and not brief['room_is_current']
-    assert tr.update(changed(resolved_room='Lounge'), 95)['text'] == 'Cleaning Kitchen'
-    assert tr.update(changed(resolved_room='Lounge'), 154)['text'] == 'Cleaning Kitchen'
-    assert tr.update(changed(resolved_room='Lounge'), 155)['text'] == 'Cleaning Lounge'
+    assert brief['text'] == 'Vacuuming \u00b7 Kitchen' and not brief['room_is_current']
+    assert tr.update(changed(resolved_room='Lounge'), 95)['text'] == 'Vacuuming \u00b7 Kitchen'
+    assert tr.update(changed(resolved_room='Lounge'), 154)['text'] == 'Vacuuming \u00b7 Kitchen'
+    assert tr.update(changed(resolved_room='Lounge'), 155)['text'] == 'Vacuuming \u00b7 Lounge'
 
 
 def test_attributes_and_periodic_poll_do_not_restart_window():
@@ -56,7 +56,7 @@ def test_missing_room_restarts_confirmation(interruption):
     tr = activity.ActivityTracker()
     tr.update(data(), 0); tr.update(data(), 60)
     # resolve_room translates unknown/unavailable to None in the adapter.
-    assert tr.update(changed(resolved_room=activity.resolve_room(interruption,[],'Ground')), 61)['text'] == 'Cleaning'
+    assert tr.update(changed(resolved_room=activity.resolve_room(interruption,[],'Ground')), 61)['text'] == 'Vacuuming'
     tr.update(data(),70)
     assert tr.update(data(),129)['room'] is None
     assert tr.update(data(),130)['room'] == 'Kitchen'
@@ -66,9 +66,9 @@ def test_missing_room_restarts_confirmation(interruption):
 def test_new_cleaning_spell_does_not_reuse_previous_room(vacuum_state):
     tr=activity.ActivityTracker(); tr.update(data(),0); tr.update(data(),60)
     tr.update(changed(vacuum_state=vacuum_state),65)
-    assert tr.update(data(),70)['text']=='Cleaning'
-    assert tr.update(data(),129)['text']=='Cleaning'
-    assert tr.update(data(),130)['text']=='Cleaning Kitchen'
+    assert tr.update(data(),70)['text']=='Vacuuming'
+    assert tr.update(data(),129)['text']=='Vacuuming'
+    assert tr.update(data(),130)['text']=='Vacuuming \u00b7 Kitchen'
 
 
 def test_idle_room_confirmation_does_not_claim_cleaning_location():
@@ -76,8 +76,8 @@ def test_idle_room_confirmation_does_not_claim_cleaning_location():
     idle=changed(vacuum_state='docked')
     tr.update(idle,0)
     assert tr.update(idle,60)['confirmed_room']=='Kitchen'
-    assert tr.update(data(),61)['text']=='Cleaning'
-    assert tr.update(data(),121)['text']=='Cleaning Kitchen'
+    assert tr.update(data(),61)['text']=='Vacuuming'
+    assert tr.update(data(),121)['text']=='Vacuuming \u00b7 Kitchen'
 
 
 @pytest.mark.parametrize('field,value',[
@@ -86,7 +86,7 @@ def test_source_map_or_robot_change_resets_timers(field,value):
     tr=activity.ActivityTracker();tr.update(data(),0);tr.update(data(),60)
     fresh=changed(**{field:value})
     assert tr.update(fresh,61)['confirmed_room'] is None
-    assert tr.update(fresh,121)['text']=='Cleaning Kitchen'
+    assert tr.update(fresh,121)['text']=='Vacuuming \u00b7 Kitchen'
 
 
 def test_changing_delay_restarts_proof_window():
@@ -105,16 +105,16 @@ def test_poll_at_65_seconds_is_not_backdated_to_entry_time():
 def test_bad_delay_uses_default(value):
     tr=activity.ActivityTracker()
     tr.update(data(),0,value)
-    assert tr.update(data(),59,value)['text']=='Cleaning'
-    assert tr.update(data(),60,value)['text']=='Cleaning Kitchen'
+    assert tr.update(data(),59,value)['text']=='Vacuuming'
+    assert tr.update(data(),60,value)['text']=='Vacuuming \u00b7 Kitchen'
 
 
 @pytest.mark.parametrize('delta, expected', [
     ({'error_raw':'main_brush_jammed'},'Main brush jammed'),
     ({'error_raw':'wheels_suspended'},'Wheels suspended'),
-    ({'vacuum_state':'returning'},'Returning to dock'),
+    ({'vacuum_state':'returning'},'Returning'),
     ({'vacuum_state':'paused'},'Paused'),
-    ({'vacuum_state':'docked','emptying':True},'Emptying dustbin'),
+    ({'vacuum_state':'docked','emptying':True},'Emptying'),
     ({'vacuum_state':'docked','washing':True},'Washing mop'),
     ({'vacuum_state':'docked','drying':True},'Drying mop'),
     ({'vacuum_state':'docked'},'Docked'),
@@ -132,8 +132,8 @@ def test_non_room_activity_is_not_delayed(delta,expected):
 
 
 @pytest.mark.parametrize('mode,text',[
-    ('vacuum','Cleaning Kitchen'),('mop','Mopping Kitchen'),
-    ('vac_and_mop','Vacuuming and mopping Kitchen'),('custom','Cleaning Kitchen')])
+    ('vacuum','Vacuuming \u00b7 Kitchen'),('mop','Mopping \u00b7 Kitchen'),
+    ('vac_and_mop','Vac + mop \u00b7 Kitchen'),('custom','Cleaning \u00b7 Kitchen')])
 def test_live_modes(mode,text):
     tr=activity.ActivityTracker();tr.update(changed(mode=mode),0)
     assert tr.update(changed(mode=mode),60)['text']==text
@@ -154,7 +154,7 @@ def test_scheduled_target_and_enabled_flag_not_used_as_location_or_activity():
     tr=activity.ActivityTracker()
     d=changed(scheduled_room='Bathroom',scheduler_enabled=False)
     tr.update(d,0)
-    assert tr.update(d,60)['text']=='Cleaning Kitchen'
+    assert tr.update(d,60)['text']=='Vacuuming \u00b7 Kitchen'
 
 
 @pytest.mark.parametrize('value',['unknown','unavailable','','not_in_a_room','0','-1',None])

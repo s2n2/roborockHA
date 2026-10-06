@@ -72,9 +72,9 @@ def test_timer_publishes_confirmed_room_without_more_source_events(adapter,monke
     notifications=[];c.add_listener(lambda:notifications.append(c.activity['text']))
     c.publish()
     clock[0]=59;c._timer(None)
-    assert notifications[-1]=='Cleaning'
+    assert notifications[-1]=='Vacuuming'
     clock[0]=60;c._timer(None)
-    assert notifications[-1]=='Cleaning Kitchen'
+    assert notifications[-1]=='Vacuuming \u00b7 Kitchen'
     assert not calls and not c.engine.enabled
 
 
@@ -130,7 +130,7 @@ def test_new_entities_are_text_sensors_with_no_units(adapter,monkeypatch):
     room_sensor=next(e for e in entities if e.key=='room_stable')
     assert activity_sensor.entity_id=='sensor.dobby_scheduler_activity'
     assert room_sensor.entity_id=='sensor.dobby_scheduler_room_stable'
-    assert activity_sensor.native_value=='Cleaning'
+    assert activity_sensor.native_value=='Vacuuming'
     assert activity_sensor.available is True
     assert activity_sensor.extra_state_attributes['scheduled_room'] is None
     assert not hasattr(activity_sensor,'_attr_native_unit_of_measurement')

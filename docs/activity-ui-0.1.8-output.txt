@@ -1,0 +1,30 @@
+{
+  "checks_passed": 23,
+  "checks": [
+    "readable activity displayed",
+    "physical activity separate from disabled scheduler",
+    "activity opens reusable sensor more-info",
+    "default full-minute confirmation",
+    "current_room_entity configurable in UI",
+    "status_entity configurable in UI",
+    "dock_error_entity configurable in UI",
+    "drying_entity configurable in UI",
+    "confirmation setting saved",
+    "room source setting saved",
+    "filtered-history limit explained in app",
+    "diagnostics include activity data",
+    "renders Main brush jammed",
+    "renders Returning",
+    "renders Emptying",
+    "renders Mopping \u00b7 Bathroom",
+    "renders Vacuuming \u00b7 Hallway",
+    "renders Vac + mop \u2192 Kitchen",
+    "activity card fits 390px viewport",
+    "activity settings fit mobile popup",
+    "activity text escaped",
+    "no robot or queue commands from activity display",
+    "no browser JavaScript exceptions"
+  ],
+  "browser_errors": [],
+  "scope": "Headless Chromium with mocked HA data, not a live robot or HA install"
+}

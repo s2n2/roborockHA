@@ -486,7 +486,19 @@ this record through its coordinator. Any incompatible layout fails closed.
             else:
                 state = self.hass.states.get(entity)
                 water.append(str(state.attributes.get("friendly_name", entity)) + " needs attention")
+        # Presentation-only context. Never use the next queued job or a preparing,
+        # interrupted, faulted or restoring job as proof of present location.
+        active = self.engine.active or {}
+        target = active if (
+            active.get("phase") in {"starting", "cleaning"}
+            and active.get("command_at") is not None
+            and active.get("uid")
+            and not active.get("interrupted")
+            and not self.engine.fault
+        ) else {}
         observed = {
+            "scheduled_room": target.get("name"),
+            "scheduled_run_id": (f"{target['uid']}:{target['command_at']}" if target else None),
             "vacuum_entity": self.settings["vacuum_entity"],
             "vacuum_state": self.raw(self.settings["vacuum_entity"]),
             "detail_state": self.raw(sources["status_entity"]),

@@ -1,3 +1,13 @@
+# Validation for 0.1.8
+
+See docs/validation-0.1.8.txt for checks actually run for this release. Earlier
+release results below remain historical; they were not all re-run for 0.1.8.
+
+Before relying on the new display, check one normal scheduler run: the arrow
+must mean job target only, the dot must appear only after room confirmation,
+returning must remove the room suffix, and a fault must remain visible. None of
+these presentation checks can mark a job completed or command the robot.
+
 # Latest validation: 0.1.7
 
 Read UPGRADE_0.1.7.md and docs/validation-0.1.7.txt. Current run:

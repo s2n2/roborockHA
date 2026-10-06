@@ -66,6 +66,9 @@ class DobbyActivity(DobbyEntity, SensorEntity):
         c, a = self.controller, self.controller.activity
         return {
             "activity_code": a.get("code"), "confirmed_room": a.get("room"),
+            "display_room": a.get("display_room"),
+            "display_room_source": a.get("display_room_source"),
+            "detail": a.get("detail_text"),
             "room_is_current": a.get("room_is_current", False),
             "room_pending_confirmation": a.get("room_pending", False),
             "room_confirmation_seconds": a.get("confirmation_seconds", 60),

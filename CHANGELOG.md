@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.8 - Compact room-aware Activity
+
+- Shorter action labels and a confirmed-room separator in the existing sensor.
+- Show a dispatched active-job target with an arrow while its location is
+  unconfirmed; do not imply that a queued room is physical location.
+- Keep 60-second observed-room filtering and fault/dock precedence.
+- Reset the cleaning-room latch at new dispatched attempts, even if a short dock
+  transition was missed; leave standalone location history independent.
+- Retain activity_code values; add display_room, display_room_source and detail.
+- Update in-card instructions and release metadata. Scheduling engine unchanged.
+- 424 Python, 23 Chromium Activity/UI and 11 Node registration checks passed in
+  simulations; no live Home Assistant or robot test.
+
 ## 0.1.7 - Immediate switch/button batches while home
 
 - Separate per-job gesture-start permission from ordinary queue ordering.

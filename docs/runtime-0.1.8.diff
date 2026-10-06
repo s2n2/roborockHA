@@ -1,0 +1,189 @@
+--- v0.1.7/custom_components/dobby_scheduler/activity.py
++++ v0.1.8/custom_components/dobby_scheduler/activity.py
+@@ -2,6 +2,7 @@
+ 
+ The reported location must remain unchanged for the whole confirmation interval.
+ Room timers use monotonic time, are not restored, and never prove job completion.
++An unconfirmed owned-job target may appear with an arrow, never as measured location.
+ """
+ from __future__ import annotations
+ 
+@@ -144,6 +145,7 @@
+         self.location = RoomDebouncer()
+         self.cleaning_location = RoomDebouncer()
+         self.context = None
++        self.cleaning_run = None
+ 
+     def update(self, data: dict, now: float, seconds: float = 60) -> dict:
+         seconds = float(seconds)
+@@ -155,18 +157,49 @@
+             self.cleaning_location.reset()
+             self.context = identity
+         code, text, icon = classify(data)
++        detail_text = text
++        # Keep activity_code stable for existing automations; shorten only display.
++        text = {
++            "vacuuming_and_mopping": "Vac + mop",
++            "returning": "Returning",
++            "emptying": "Emptying",
++            "moving": "Moving",
++            "updating": "Updating",
++        }.get(code, text)
++        if code == "cleaning" and token(data.get("mode")) == "vacuum":
++            text = "Vacuuming"
+         valid = code not in {"unavailable", "not_configured"}
+         room = data.get("resolved_room") if valid else None
+         self.location.feed(room, now, seconds)
++        display_room = display_room_source = None
+         if code in {"cleaning", "mopping", "vacuuming_and_mopping"}:
++            # A new dispatched attempt must not inherit the preceding job's room,
++            # even when a short dock visit was missed between telemetry updates.
++            run = data.get("scheduled_run_id")
++            if run != self.cleaning_run:
++                self.cleaning_location.reset()
++                self.cleaning_run = run
+             self.cleaning_location.feed(room, now, seconds)
+             if self.cleaning_location.confirmed:
+-                text += " " + self.cleaning_location.confirmed
++                display_room = self.cleaning_location.confirmed
++                display_room_source = "confirmed"
++                text += " \u00b7 " + display_room
++                detail_text += " " + display_room
++            elif run and token(data.get("scheduled_room")) not in MISSING:
++                # The adapter only passes a dispatched, non-interrupted owned job.
++                # Arrow means target/job, not a claim of physical presence there.
++                display_room = humanize(data["scheduled_room"])
++                display_room_source = "scheduled"
++                text += " \u2192 " + display_room
++                detail_text += " (scheduled room: " + display_room + ")"
+         else:
+             self.cleaning_location.reset()
++            self.cleaning_run = None
+         actual_room = self.cleaning_location.confirmed
+         return {
+-            "text": text[:250], "code": code, "icon": icon, "available": code != "unavailable",
++            "text": text[:250], "detail_text": detail_text[:250],
++            "display_room": display_room, "display_room_source": display_room_source,
++            "code": code, "icon": icon, "available": code != "unavailable",
+             "room": actual_room, "room_is_current": bool(actual_room and room == actual_room),
+             "confirmed_room": self.location.confirmed,
+             "confirmed_room_is_current": bool(self.location.confirmed and self.location.confirmed == room),
+--- v0.1.7/custom_components/dobby_scheduler/const.py
++++ v0.1.8/custom_components/dobby_scheduler/const.py
+@@ -1,5 +1,5 @@
+ """Shared release and bundled dashboard resource constants."""
+ 
+-VERSION = "0.1.7"
++VERSION = "0.1.8"
+ FRONTEND_PATH = "/dobby_scheduler_frontend"
+ CARD_URL = f"{FRONTEND_PATH}/dobby-scheduler-card.js?v={VERSION}"
+--- v0.1.7/custom_components/dobby_scheduler/controller.py
++++ v0.1.8/custom_components/dobby_scheduler/controller.py
+@@ -486,7 +486,19 @@
+             else:
+                 state = self.hass.states.get(entity)
+                 water.append(str(state.attributes.get("friendly_name", entity)) + " needs attention")
++        # Presentation-only context. Never use the next queued job or a preparing,
++        # interrupted, faulted or restoring job as proof of present location.
++        active = self.engine.active or {}
++        target = active if (
++            active.get("phase") in {"starting", "cleaning"}
++            and active.get("command_at") is not None
++            and active.get("uid")
++            and not active.get("interrupted")
++            and not self.engine.fault
++        ) else {}
+         observed = {
++            "scheduled_room": target.get("name"),
++            "scheduled_run_id": (f"{target['uid']}:{target['command_at']}" if target else None),
+             "vacuum_entity": self.settings["vacuum_entity"],
+             "vacuum_state": self.raw(self.settings["vacuum_entity"]),
+             "detail_state": self.raw(sources["status_entity"]),
+--- v0.1.7/custom_components/dobby_scheduler/frontend/dobby-scheduler-card.js
++++ v0.1.8/custom_components/dobby_scheduler/frontend/dobby-scheduler-card.js
+@@ -1,4 +1,4 @@
+-/* Dobby Scheduler 0.1.7. No external dependencies or remote assets. */
++/* Dobby Scheduler 0.1.8. No external dependencies or remote assets. */
+ 
+ // Integration extra modules can execute before HA's app bundle installs the
+ // scoped-custom-element-registry polyfill. Registering (or even constructing
+@@ -10,14 +10,14 @@
+ // https://github.com/home-assistant/frontend/issues/52960
+ // https://github.com/home-assistant/frontend/blob/dev/src/entrypoints/app.ts
+ async function registerDobbySchedulerCard() {
+-  window.dobbySchedulerCardStatus = {version:'0.1.7', stage:'waiting-for-home-assistant'};
++  window.dobbySchedulerCardStatus = {version:'0.1.8', stage:'waiting-for-home-assistant'};
+   await window.customElements.whenDefined('home-assistant');
+   // The global registry may have changed while the native promise was pending.
+   // Always resolve against the CURRENT registry, never a cached reference.
+   if (!window.customElements.get('home-assistant')) {
+     await window.customElements.whenDefined('home-assistant');
+   }
+-  window.dobbySchedulerCardStatus = {version:'0.1.7', stage:'registering'};
++  window.dobbySchedulerCardStatus = {version:'0.1.8', stage:'registering'};
+ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const modes = {vacuum:'Vacuum', vac_and_mop:'Vacuum + mop', mop:'Mop'};
+ const modeIcon = m => m === 'vacuum' ? 'mdi:vacuum' : m === 'mop' ? 'mdi:water' : 'mdi:water-plus';
+@@ -246,7 +246,7 @@
+ `;
+ 
+ class DobbySchedulerCard extends HTMLElement {
+-  static get version(){return '0.1.7';}
++  static get version(){return '0.1.8';}
+   constructor() {
+     super(); this.attachShadow({mode:'open'}); this.tab='rooms'; this.data=null; this.configData=null;
+     this.gestureDraft={entity_id:'',label:'dobby_room_double_toggle',event_type:''};
+@@ -379,7 +379,7 @@
+       ${(d.gesture_issues||[]).map(i=>`<div class="warn"><code>${esc(i.entity_id)}</code><p>${esc(i.message)}</p><button data-action="remove-toggle" data-id="${esc(i.entity_id)}">Remove gesture labels</button></div>`).join('')}
+       <details><summary>Other button types and avoiding accidental requests</summary><p class="small">A momentary binary input triggers only OFF → ON, not its release. Button and input_button timestamps must be fresh; old timestamps restored at startup are ignored. An input_button can also bridge raw ZHA or Shelly button events through one normal Home Assistant UI automation. Raw event-bus messages alone cannot carry entity labels.</p><p class="small">Cloud switches may be too slow for a two-second cycle. Use one local physical input where possible. Only one gesture label per input; conflicting labels are blocked. The short alias <code>room_press</code> is accepted for <code>dobby_room_press</code>.</p></details>`;
+   }
+-  help(){return `<div class="instructions"><h3>One-time setup</h3><p>1. Under <strong>Robot &amp; schedule</strong>, select the vacuum and home-presence sensor. Use Find controls, check each proposed entity and save.</p><p>2. Under <strong>Rooms &amp; map</strong>, create the labels, fetch maps, select each Area's mode, priority and exact segment numbers, and confirm the mapping.</p><p>3. Label wall-switch inputs under <strong>Buttons &amp; switches</strong>. Their entity Area takes precedence over their device Area.</p><p>4. Disable the old vacuum scheduler and any automatic map-reset routine. Restore Daily defaults and test one room under supervision before enabling Automatic when away.</p><h3>Labels</h3><table><tr><th>Label</th><th>Apply to</th><th>Meaning</th></tr>${[['dobby_cleanable','Area','Show this room in the picker'],['dobby_daily','Area','Include in each new cleaning day'],['dobby_vacuum','Area','Vacuum only'],['dobby_vacuum_mop','Area','Vacuum and mop'],['dobby_mop','Area','Mop only'],['dobby_room_toggle','One on/off input','One complete switch cycle (2 changes)'],['dobby_room_double_toggle','One on/off input','Two complete cycles (4 changes)'],['dobby_room_press','Button/event or momentary input','One press; room_press is also recognised']].map(r=>`<tr><td><code>${r[0]}</code></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table><p>Only one mode label per Area. With no mode label, vacuum is used and the room's details show a warning. Conflicting modes block that room.</p><h3>Queue behaviour</h3><p>The to-do list is the persistent plan. Select rooms on the card, use the arrows to reorder today, or use the priority button to make a room next. None of these changes modifies tomorrow's default priorities.</p><p>A wall request promotes an existing job without duplicates; a request for an already completed room makes it pending again. The active room is never interrupted by a priority request.</p><p>Switch/button requests run one after another even while people are home, without waiting for the automatic window or away delay. They do not grant permission to the ordinary daily queue. Pause &amp; dock, reset and restart cancel immediate permissions; a fresh gesture authorises that room again. A dashboard Make next is only a queue reorder. On arrival home, an ordinary automatic run returns to the dock and its unfinished room stays pending. On leaving again, it is eligible after the away delay. Run now can explicitly allow a supervised run at home; that override is not restored after a restart.</p><h3>When a room is done</h3><p>Automatic completion requires an observed cleaning run, a new successful Roborock clean record for this job, return to dock, and confirmation of required dust emptying. Docking for mop washing or recharge is not completion. No timeout is treated as success.</p><p>Mop wash decisions remain with the robot's firmware. This scheduler sets the room mode before starting and never explicitly starts a mop wash. Vacuum-only mode avoids requesting mopping; it cannot promise to override all dock firmware behaviour.</p><h3>Water-tank fallback</h3><p>With Vacuum instead when a water tank needs attention enabled, confirmed configured tank alerts switch mop and vacuum + mop jobs to vacuum for that attempt only. Unavailable water sensors are not assumed to mean an empty tank. Room labels and normal priorities remain unchanged.</p><p>If the water problem appears during a wet clean, Dobby docks and restarts that room from the beginning in vacuum-only mode. It is completed only after the normal successful record, dock and required emptying checks. The queue says Vacuumed only - mop skipped; refilling does not silently repeat completed rooms. Tap a room to repeat it, or let the next daily reset use its original mode. Robot errors, pause/presence rules and unsuccessful records still block.</p><h3>Overnight reset</h3><p>At the configured local reset time, daily-labelled Areas replace yesterday's list in their default priority order. Ad-hoc requests expire. Reset is deferred while a job is active, and a missed reset is caught after startup.</p><h3>Activity and room history</h3><p>The Activity sensor shows what the robot reports, even when this scheduler is disabled. A new cleaning spell starts as Cleaning (or Mopping) and gains its room name only after a continuous confirmation window. The scheduled target is kept separately; it is not treated as observed location.</p><p>The Confirmed room sensor holds the last accepted room during shorter changes. An unknown/disconnected room source clears the confirmation window. A restart or map/source change begins a fresh window. Faults and dock operations are not delayed. Historical entries are recorded when confirmed, not backdated.</p><p>In a native Activity/logbook card, target only the Activity sensor for clean history. A whole-device target includes the original noisy room readings too. Reporting changes do not start, stop, or complete jobs.</p><h3>Safety and limitations</h3><p>Use the official Roborock integration with segment-cleaning support. Completion uses a guarded, read-only V1 coordinator adapter; a future API change may block completion until updated. Never run Roborock app schedules or another automation concurrently with this queue.</p><p>Review motion alarms before unattended cleaning. This integration never disarms your alarm, switches lights for feedback, changes maps, or disables Do Not Disturb. The Locate acknowledgement may be suppressed by DND.</p><p>The queue and settings live locally in Home Assistant's storage and are covered by a Home Assistant backup. This bundle contains no third-party trackers, remote scripts or separate robot credentials.</p><p class="small">Version 0.1.7 &bull; locally simulated, not hardware-certified. See README and TESTING.md in the bundle.</p></div>`;}
++  help(){return `<div class="instructions"><h3>One-time setup</h3><p>1. Under <strong>Robot &amp; schedule</strong>, select the vacuum and home-presence sensor. Use Find controls, check each proposed entity and save.</p><p>2. Under <strong>Rooms &amp; map</strong>, create the labels, fetch maps, select each Area's mode, priority and exact segment numbers, and confirm the mapping.</p><p>3. Label wall-switch inputs under <strong>Buttons &amp; switches</strong>. Their entity Area takes precedence over their device Area.</p><p>4. Disable the old vacuum scheduler and any automatic map-reset routine. Restore Daily defaults and test one room under supervision before enabling Automatic when away.</p><h3>Labels</h3><table><tr><th>Label</th><th>Apply to</th><th>Meaning</th></tr>${[['dobby_cleanable','Area','Show this room in the picker'],['dobby_daily','Area','Include in each new cleaning day'],['dobby_vacuum','Area','Vacuum only'],['dobby_vacuum_mop','Area','Vacuum and mop'],['dobby_mop','Area','Mop only'],['dobby_room_toggle','One on/off input','One complete switch cycle (2 changes)'],['dobby_room_double_toggle','One on/off input','Two complete cycles (4 changes)'],['dobby_room_press','Button/event or momentary input','One press; room_press is also recognised']].map(r=>`<tr><td><code>${r[0]}</code></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table><p>Only one mode label per Area. With no mode label, vacuum is used and the room's details show a warning. Conflicting modes block that room.</p><h3>Queue behaviour</h3><p>The to-do list is the persistent plan. Select rooms on the card, use the arrows to reorder today, or use the priority button to make a room next. None of these changes modifies tomorrow's default priorities.</p><p>A wall request promotes an existing job without duplicates; a request for an already completed room makes it pending again. The active room is never interrupted by a priority request.</p><p>Switch/button requests run one after another even while people are home, without waiting for the automatic window or away delay. They do not grant permission to the ordinary daily queue. Pause &amp; dock, reset and restart cancel immediate permissions; a fresh gesture authorises that room again. A dashboard Make next is only a queue reorder. On arrival home, an ordinary automatic run returns to the dock and its unfinished room stays pending. On leaving again, it is eligible after the away delay. Run now can explicitly allow a supervised run at home; that override is not restored after a restart.</p><h3>When a room is done</h3><p>Automatic completion requires an observed cleaning run, a new successful Roborock clean record for this job, return to dock, and confirmation of required dust emptying. Docking for mop washing or recharge is not completion. No timeout is treated as success.</p><p>Mop wash decisions remain with the robot's firmware. This scheduler sets the room mode before starting and never explicitly starts a mop wash. Vacuum-only mode avoids requesting mopping; it cannot promise to override all dock firmware behaviour.</p><h3>Water-tank fallback</h3><p>With Vacuum instead when a water tank needs attention enabled, confirmed configured tank alerts switch mop and vacuum + mop jobs to vacuum for that attempt only. Unavailable water sensors are not assumed to mean an empty tank. Room labels and normal priorities remain unchanged.</p><p>If the water problem appears during a wet clean, Dobby docks and restarts that room from the beginning in vacuum-only mode. It is completed only after the normal successful record, dock and required emptying checks. The queue says Vacuumed only - mop skipped; refilling does not silently repeat completed rooms. Tap a room to repeat it, or let the next daily reset use its original mode. Robot errors, pause/presence rules and unsuccessful records still block.</p><h3>Overnight reset</h3><p>At the configured local reset time, daily-labelled Areas replace yesterday's list in their default priority order. Ad-hoc requests expire. Reset is deferred while a job is active, and a missed reset is caught after startup.</p><h3>Activity and room history</h3><p>Activity uses short summaries such as Vac + mop &middot; Kitchen. A dot shows a confirmed room (the 60-second filter still applies). An arrow, such as Vac + mop &rarr; Kitchen, shows the active dispatched job's target while its location is unconfirmed. It is not proof of physical location. App-started cleaning without an owned job waits for a confirmed room reading. Returning, Emptying and faults update without a room delay. The full description and room source remain in the sensor attributes.</p><p>The Confirmed room sensor holds the last accepted room during shorter changes. An unknown/disconnected room source clears the confirmation window. A restart or map/source change begins a fresh window. Faults and dock operations are not delayed. Historical entries are recorded when confirmed, not backdated.</p><p>In a native Activity/logbook card, target only the Activity sensor for clean history. A whole-device target includes the original noisy room readings too. Reporting changes do not start, stop, or complete jobs.</p><h3>Safety and limitations</h3><p>Use the official Roborock integration with segment-cleaning support. Completion uses a guarded, read-only V1 coordinator adapter; a future API change may block completion until updated. Never run Roborock app schedules or another automation concurrently with this queue.</p><p>Review motion alarms before unattended cleaning. This integration never disarms your alarm, switches lights for feedback, changes maps, or disables Do Not Disturb. The Locate acknowledgement may be suppressed by DND.</p><p>The queue and settings live locally in Home Assistant's storage and are covered by a Home Assistant backup. This bundle contains no third-party trackers, remote scripts or separate robot credentials.</p><p class="small">Version 0.1.8 &bull; locally simulated, not hardware-certified. See README and TESTING.md in the bundle.</p></div>`;}
+   diagnostics(){const d=this.data;return `<div class="instructions"><h3>Current status</h3><p>${esc(d.reason)}</p><p><strong>Completion source:</strong> ${esc(d.backend)}</p>${d.telemetry?.legacy?.length?`<div class="warn"><strong>Conflicting legacy automations</strong>${d.telemetry.legacy.map(a=>`<p>${esc(a.name)}<br><code>${esc(a.entity_id)}</code></p>`).join('')}<button data-action="disable-legacy">Disable these old Dobby automations</button><p class="small">Only these recognised automations will be turned off, not deleted. This action requires an administrator.</p></div>`:''}<div class="inline"><button data-action="locate">Test Locate acknowledgement</button><button data-action="export">Download diagnostic snapshot</button><button data-action="queue-info">Open native to-do list</button></div><h3>Activity &amp; confirmed room</h3><pre>${esc(JSON.stringify(d.activity||{},null,2))}</pre><h3>Latest robot readings</h3><pre>${esc(JSON.stringify(d.telemetry,null,2))}</pre><h3>Immediate switch-request rooms</h3><pre>${esc(JSON.stringify(d.immediate_rooms||[],null,2))}</pre><h3>Current job</h3><pre>${esc(JSON.stringify(d.active,null,2))}</pre><h3>Recent events</h3>${[...(d.log||[])].reverse().map(l=>`<div class="logrow"><time>${new Date(l.at*1000).toLocaleString()}</time>${esc(l.message)}</div>`).join('')||'<p>No events yet.</p>'}</div>`;}
+   jobDialog(uid){const j=this.data.jobs.find(j=>j.uid===uid);if(!j)return;this.jobId=uid;const dialog=this.shadowRoot.getElementById('setup');dialog.innerHTML=`<div class="dialoghead"><h2>${esc(j.name)}</h2><button class="icon" data-action="close" aria-label="Close">${icon('mdi:close')}</button></div><div class="pane"><p>${esc(modes[j.mode]||'Mode conflict')} &bull; ${esc(j.map_name)} &bull; room ${esc(j.segments.join(', '))}</p>${j.water_fallback?`<div class="warn water-fallback"><strong>Vacuum only - mopping skipped</strong><p>Requested: ${esc(modes[j.requested_mode||j.mode]||'Unknown')}. ${esc(j.fallback_reason||'Water tank needs attention')}. The room label is unchanged.</p></div>`:''}${j.immediate_request?'<p class="small">Switch/button request: can run while home. This permission applies only to this room and ends at completion, pause, reset or restart.</p>':''}<p class="small">${esc(j.reason||'Waiting for its turn')}</p><div class="field"><label>Note</label><textarea id="job-note" rows="3">${esc(j.note||'')}</textarea></div><div class="savebar"><button data-action="remove-job" data-id="${uid}">Remove from today</button><button data-action="manual-done" data-id="${uid}">Manually confirm cleaned</button><button class="primary" data-action="save-note" data-id="${uid}">Save note</button></div><p class="small">Manual completion is permitted only while docked and is recorded as a user confirmation, not a successful robot report.</p></div>`;if(!dialog.open)dialog.showModal();}
+   async click(event){const b=event.target.closest?.('[data-action]');if(!b||b.disabled)return;const a=b.dataset.action,id=b.dataset.id;try{
+@@ -444,17 +444,17 @@
+ const registeredDobbyCard = window.customElements.get('dobby-scheduler-card');
+ if (!registeredDobbyCard) throw new Error('Dobby card definition is missing from the active element registry.');
+ window.dobbySchedulerCardStatus = {
+-  version:'0.1.7', stage:'registered',
++  version:'0.1.8', stage:'registered',
+   elementVersion:registeredDobbyCard.version || 'older-build',
+   cardRegistered:true
+ };
+-if (registeredDobbyCard !== DobbySchedulerCard && registeredDobbyCard.version !== '0.1.7') {
+-  console.warn('[Dobby Scheduler 0.1.7] An older card is already registered. Fully refresh this page to use the new card.');
++if (registeredDobbyCard !== DobbySchedulerCard && registeredDobbyCard.version !== '0.1.8') {
++  console.warn('[Dobby Scheduler 0.1.8] An older card is already registered. Fully refresh this page to use the new card.');
+ } else {
+-  console.info('[Dobby Scheduler 0.1.7] Card registered after Home Assistant frontend initialisation.');
++  console.info('[Dobby Scheduler 0.1.8] Card registered after Home Assistant frontend initialisation.');
+ }
+ }
+ registerDobbySchedulerCard().catch(error => {
+-  window.dobbySchedulerCardStatus = {version:'0.1.7', stage:'failed', error:String(error)};
+-  console.error('[Dobby Scheduler 0.1.7] Could not register the card:', error);
++  window.dobbySchedulerCardStatus = {version:'0.1.8', stage:'failed', error:String(error)};
++  console.error('[Dobby Scheduler 0.1.8] Could not register the card:', error);
+ });
+--- v0.1.7/custom_components/dobby_scheduler/manifest.json
++++ v0.1.8/custom_components/dobby_scheduler/manifest.json
+@@ -18,5 +18,5 @@
+   "iot_class": "local_push",
+   "issue_tracker": "https://github.com/s2n2/roborockHA/issues",
+   "requirements": [],
+-  "version": "0.1.7"
++  "version": "0.1.8"
+ }
+--- v0.1.7/custom_components/dobby_scheduler/sensor.py
++++ v0.1.8/custom_components/dobby_scheduler/sensor.py
+@@ -66,6 +66,9 @@
+         c, a = self.controller, self.controller.activity
+         return {
+             "activity_code": a.get("code"), "confirmed_room": a.get("room"),
++            "display_room": a.get("display_room"),
++            "display_room_source": a.get("display_room_source"),
++            "detail": a.get("detail_text"),
+             "room_is_current": a.get("room_is_current", False),
+             "room_pending_confirmation": a.get("room_pending", False),
+             "room_confirmation_seconds": a.get("confirmation_seconds", 60),

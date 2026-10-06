@@ -44,7 +44,7 @@ def run():
         page.locator('[data-action=close]').click()
         page.set_viewport_size({'width':390,'height':1050})
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');checks.append('mobile page does not overflow')
-        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/immediate-requests-0.1.7-mobile.png'))
+        page.locator('dobby-scheduler-card').screenshot(path=str(ROOT/'docs/previews/immediate-requests-0.1.8-mobile.png'))
         page.evaluate("""async()=>{demo.jobs[0].name='<img src=x onerror=alert(1)>';await document.querySelector('dobby-scheduler-card').refresh();}""")
         assert page.locator('.immediate-requests img').count()==0;checks.append('request names HTML-escaped')
         page.evaluate("""async()=>{demo.jobs.forEach(j=>j.immediate_request=false);demo.immediate_rooms=[];demo.reason='Waiting for everyone to leave';await document.querySelector('dobby-scheduler-card').refresh();}""")
@@ -56,7 +56,7 @@ def run():
         browser.close()
     result={'checks_passed':len(checks),'checks':checks,'browser_errors':errors,
             'scope':'Headless Chromium with mocked Home Assistant backend; no live robot'}
-    (ROOT/'docs/immediate-ui-0.1.7-results.json').write_text(json.dumps(result,indent=2))
+    (ROOT/'docs/immediate-ui-0.1.8-results.json').write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))
 
 if __name__=='__main__':run()

@@ -1,5 +1,15 @@
-# Dobby Scheduler 0.1.7
+# Dobby Scheduler 0.1.8
 
+
+## 0.1.8: compact activity with a room
+
+The existing Activity sensor now reports **Vac + mop · Kitchen**, **Vacuuming
+· Hallway**, **Mopping · Bathroom**, **Returning** and **Emptying**. Error
+names remain descriptive. Confirmed observed rooms keep the one-minute filter.
+Until a room confirms, a dispatched owned job can show **Vac + mop → Kitchen**:
+the arrow means scheduled destination, not observed position. Without an owned
+job and usable room data, no room is guessed. Source and detailed text are in
+attributes. No card YAML or scheduler changes; see [UPGRADE_0.1.8.md](UPGRADE_0.1.8.md).
 
 ## 0.1.7: switch-requested rooms run now, even while home
 

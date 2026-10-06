@@ -1,0 +1,12 @@
+Dobby Scheduler 0.1.8 local validation
+
+424 pytest controller/adapter/gesture/activity cases passed in 0.85s.
+23 Chromium Activity/settings checks passed; no browser JavaScript errors.
+11 Node registration checks passed.
+Python compileall, node --check, and scripts/check_repository.py passed.
+
+Tests simulate HA; no real device, account or running HA instance was used.
+The frontend suite was the Activity/settings suite, not every historical browser
+or layout suite. HACS and hassfest have not been run here.
+
+Baseline is the supplied 0.1.7 ZIP. The GitHub repository was not retrievable.
