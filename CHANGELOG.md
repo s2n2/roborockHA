@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9 - Safe automatic recovery from APP_CHARGE command faults
+
+- The scheduler automatically reconciles an old `dock: Error while calling APP_CHARGE` when a scheduled, manual or gesture-requested cleaning attempt is eligible. Requires a continuously confirmed docked state, healthy available robot/dock sensors, idle dock services, and existing map/battery/queue safety checks.
+- At most one automatic recovery per queued job (persistent across restart). Other errors and unsuccessful cleaning records remain blocked. Proven work is never marked complete without the existing dock/empty confirmation.
+- A small note on the card explains the behaviour. No new settings, entities or dashboard resource.
+
 ## 0.1.8 - Compact room-aware Activity
 
 - Shorter action labels and a confirmed-room separator in the existing sensor.

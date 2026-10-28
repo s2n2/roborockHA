@@ -1,0 +1,24 @@
+Dobby Scheduler v0.1.9
+Base: previous self-contained v0.1.8 archive.
+
+Change: automatically re-evaluate latched `dock: ... APP_CHARGE ...` command
+faults when a scheduled, Run now or switch/button requested job is eligible.
+Rechecks safe docked telemetry across a settle interval, healthy robot + dock
+error signals, no active emptying/mop wash, normal queue/map/battery/start
+requirements. Retry only once per queued job, persists limit to storage.
+No other faults auto-cleared. No calls made to move/start robot merely to test
+readiness. Unproved rooms remain pending; proved rooms still require service.
+
+Checks performed locally:
+- Python 3 syntax compilation: PASS.
+- pytest -q: 458 passed; includes 34 dock-autorecovery tests.
+- node --check custom card: PASS.
+- node tests/check_card_registration.cjs: PASS.
+- python tests/test_card_startup_browser.py: PASS (mocked HA frontend).
+- python tests/test_immediate_priority_ui_browser.py: PASS (mocked HA backend).
+- python scripts/check_repository.py: PASS.
+
+Not run on the actual Home Assistant installation or Roborock. HACS validation
+and hassfest in GitHub are still required after publishing.
+Public GitHub contents were not retrievable; review independent changes before
+merging the patch. Nothing has been pushed to GitHub or installed on the robot.

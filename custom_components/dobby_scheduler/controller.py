@@ -549,10 +549,13 @@ this record through its coordinator. Any incompatible layout fails closed.
         map_name = self.raw(c["map_entity"])
         if not c["map_entity"] and flag is not None:
             map_name = next((m["name"] for m in self.maps if str(m["flag"]) == str(flag)), "unknown")
+        dock_error_entity = self.reporting_sources()["dock_error_entity"]
+        dock_error = (error_value(self.raw(dock_error_entity)) if dock_error_entity else "ok")
         t = {"now": time.time(), "home": self.boolean(c["presence_entity"], absent=None),
              "vacuum": state.state if state else "unknown", "connected": bool(state and state.state not in ("unknown", "unavailable")),
              "mode": mode_state.state if mode_state else "unknown", "mode_options": list(mode_state.attributes.get("options", [])) if mode_state else [],
              "battery": battery, "error": error_value(self.raw(c["error_entity"])),
+             "dock_error": dock_error,
              "map_name": map_name, "map_flag": flag,
              "emptying": self.boolean(c["empty_entity"], absent=None),
              "washing": self.boolean(c["wash_entity"], absent=False),

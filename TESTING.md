@@ -1,6 +1,6 @@
-# Validation for 0.1.8
+# Validation for 0.1.9
 
-See docs/validation-0.1.8.txt for checks actually run for this release. Earlier
+See docs/validation-0.1.9.txt for checks actually run for this release. Earlier
 release results below remain historical; they were not all re-run for 0.1.8.
 
 Before relying on the new display, check one normal scheduler run: the arrow

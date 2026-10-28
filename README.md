@@ -1,5 +1,18 @@
-# Dobby Scheduler 0.1.8
+# Dobby Scheduler 0.1.9
 
+
+## 0.1.9: Self-check of transient APP_CHARGE docking errors
+
+At the next permitted scheduled, dashboard Run now, or switch/button-triggered
+cleaning attempt, a saved `dock: Error while calling APP_CHARGE` is checked
+against the vacuum's actual docked status, vacuum/dock error sensors, dock-service
+activity, current map, completion support, battery and all normal start gates.
+A verified, continuously settled dock clears **that command fault only**, once per
+job, after the configured dock-settle time. An unproved job stays pending and is
+restarted; a proved job retains its completion record for dock/empty verification.
+The dashboard still offers manual Retry if needed. This does not auto-clear a brush
+jam, emptying/proof errors, real dock hardware faults, or repeated failed docking.
+No room settings or extra automation required. See [UPGRADE_0.1.9.md](UPGRADE_0.1.9.md).
 
 ## 0.1.8: compact activity with a room
 
