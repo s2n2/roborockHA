@@ -1,82 +1,4 @@
-# Dobby Scheduler 0.1.9
-
-
-## 0.1.9: Self-check of transient APP_CHARGE docking errors
-
-At the next permitted scheduled, dashboard Run now, or switch/button-triggered
-cleaning attempt, a saved `dock: Error while calling APP_CHARGE` is checked
-against the vacuum's actual docked status, vacuum/dock error sensors, dock-service
-activity, current map, completion support, battery and all normal start gates.
-A verified, continuously settled dock clears **that command fault only**, once per
-job, after the configured dock-settle time. An unproved job stays pending and is
-restarted; a proved job retains its completion record for dock/empty verification.
-The dashboard still offers manual Retry if needed. This does not auto-clear a brush
-jam, emptying/proof errors, real dock hardware faults, or repeated failed docking.
-No room settings or extra automation required. See [UPGRADE_0.1.9.md](UPGRADE_0.1.9.md).
-
-## 0.1.8: compact activity with a room
-
-The existing Activity sensor now reports **Vac + mop · Kitchen**, **Vacuuming
-· Hallway**, **Mopping · Bathroom**, **Returning** and **Emptying**. Error
-names remain descriptive. Confirmed observed rooms keep the one-minute filter.
-Until a room confirms, a dispatched owned job can show **Vac + mop → Kitchen**:
-the arrow means scheduled destination, not observed position. Without an owned
-job and usable room data, no room is guessed. Source and detailed text are in
-attributes. No card YAML or scheduler changes; see [UPGRADE_0.1.8.md](UPGRADE_0.1.8.md).
-
-## 0.1.7: switch-requested rooms run now, even while home
-
-**Behaviour change:** fresh labelled switch/button gestures now start their rooms
-as soon as ready, without waiting for the automatic schedule, absence or away delay.
-All requested rooms run consecutively, docking/emptying between them; ordinary
-daily rooms do not inherit their occupied-house permission. The current room is
-not interrupted by a later request. Existing Locate feedback remains enabled by
-default and a slow sound response no longer delays dispatch.
-
-Find **Run switch/button requests immediately, even while home** under Robot &
-schedule. It defaults ON; turn it off to retain queue-only gestures. Explicit pause,
-reset or restart cancels immediate permissions. A fresh gesture is needed after
-updating; old priority items do not automatically become immediate jobs.
-Hardware, mappings and safety checks remain in place. Test two rooms while home
-under supervision. See [UPGRADE_0.1.7.md](UPGRADE_0.1.7.md) for batch semantics.
-
-## 0.1.6: keep cleaning when a water tank needs attention
-
-Confirmed configured water-tank alerts now make mop and vacuum+mop rooms run
-**vacuum-only** by default. The mode is confirmed before dispatch; labels remain
-unchanged. A mid-run shortage docks the robot before a fresh dry attempt. The
-queue explicitly records **Vacuumed only - mop skipped** after normal successful
-clean/dock/empty verification, rather than claiming the room was mopped.
-
-The option is in **Robot & schedule**, beneath the water-problem inputs.
-Unknown water readings and unrelated robot faults are not ignored. After an
-upgrade, a saved water fault needs **Retry after checking** once while docked.
-See [UPGRADE_0.1.6.md](UPGRADE_0.1.6.md) for exact behaviour and installation.
-
-## 0.1.5: reusable robot activity and one-minute room confirmation
-
-New `sensor.dobby_scheduler_activity` reports Cleaning Kitchen, Returning to dock,
-Main brush jammed and other observed robot states, independently of the scheduler.
-`sensor.dobby_scheduler_room_stable` publishes only room names reported unchanged
-for the confirmation window (60 seconds by default). Neither is job-completion
-proof. Configure sources and the delay in Robot & schedule -> Activity & room
-history. No extra per-device YAML is required.
-
-Use the Activity sensor as the sole target in `dashboard-activity-card.yaml` for
-quiet room history with immediate error/dock updates. Read
-[UPGRADE_0.1.5.md](UPGRADE_0.1.5.md) for filter semantics, setup and update steps.
-
-
-## 0.1.4: single press, one cycle, or two cycles
-
-Configure inputs under **Buttons & switches** using `dobby_room_press`,
-`dobby_room_toggle` (two changes), or `dobby_room_double_toggle` (four changes).
-The accepted request is saved then acknowledged with Locate (enabled by default).
-
-**Existing `dobby_room_toggle` labels now mean ONE cycle.** Change them to
-`dobby_room_double_toggle` to retain the previous two-cycle behaviour.
-Read [UPGRADE_0.1.4.md](UPGRADE_0.1.4.md) for supported button/event types and
-migration. The responsive layout and delayed frontend registration are retained.
+# Dobby Scheduler 0.2.0
 
 A label-driven, room-by-room Roborock scheduler for Home Assistant, with a native ordered to-do queue and a self-contained dashboard card.
 
@@ -84,17 +6,39 @@ A label-driven, room-by-room Roborock scheduler for Home Assistant, with a nativ
 
 **Initial automatic scheduling is OFF.** Nothing moves merely because the integration loads. Review mappings, stop competing schedules and complete supervised tests before enabling unattended runs.
 
-This is an initial, locally tested build. The Python controller and browser card were tested with simulated inputs, not inside a running Home Assistant installation or on a physical robot. It is not an official Home Assistant/Roborock product and this repository is not automatically included in the HACS default catalogue.
+The Python controller and browser card were tested with simulated inputs, not inside a running Home Assistant installation or on a physical robot. It is not an official Home Assistant/Roborock product and this repository is not automatically included in the HACS default catalogue.
 
 
-## Card startup fix retained from 0.1.2
+## 0.2.0: faults fix themselves
 
-Upgrading from 0.1.1: see [UPGRADE_0.1.2.md](UPGRADE_0.1.2.md). The bundled
-card now waits for Home Assistant's root element before defining the card class
-and registering it. This avoids the extra-module/scoped-registry startup race
-where the picker entry exists but `customElements.get()` returns undefined.
-The card still loads automatically. No helpers, queue items, labels, maps or
-scheduling logic need to be recreated. A full frontend refresh is required.
+Earlier versions stopped the whole queue on any fault and waited for someone to
+press **Retry**, even across days. Now:
+
+- **Automatic recovery.** After a fault Dobby docks, waits until the robot and
+  dock both report no error with nothing emptying or washing, then waits the
+  recovery delay (2 minutes by default) and retries by itself.
+- **Skip, don't block.** Each room gets 2 automatic retries per day (0-5,
+  configurable). After that the room is **skipped for today** and the rest of the
+  queue continues. Skipped rooms come back at the nightly reset, or add one again
+  to retry it straight away.
+- **Only asks when it must.** If Dobby can't recover (usually stuck away from the
+  dock or still reporting an error) for 15 minutes after the recovery delay, the
+  card shows **Dobby needs you** and a **Repairs** entry appears. That entry
+  removes itself once the fault clears.
+- **Optional notifications.** Set a notify action such as
+  `notify.mobile_app_your_phone` under **Faults & notifications**. You get a
+  message when a room is skipped, when Dobby needs you (with a **Retry** button on
+  phone notifications), and when it recovers.
+- The status sensor now reads `recovering` while it heals itself and `attention`
+  only when a person is needed. New attributes: `needs_attention`,
+  `auto_retries_used`, `auto_retries_limit`, `skipped_rooms`.
+
+Safety checks have not been relaxed. Clearing a fault never starts a clean by
+itself, and completion still needs the normal clean record, dock and emptying
+proof. Errors raised by the scheduler's own code still wait for a person.
+
+Earlier releases are summarised in [CHANGELOG.md](CHANGELOG.md); older upgrade
+notes are in [docs/upgrades](docs/upgrades).
 
 ## What is included
 
@@ -267,7 +211,7 @@ Automatic completion requires all of:
 
 Mop washing during an unfinished job is not success. Returning to recharge or a cancelled record is not success. A timeout is never success. If auto-emptying is already observed, the scheduler avoids issuing it again; otherwise it requests emptying and waits. Do Not Disturb is never turned off to force an empty or a voice acknowledgement.
 
-Faults are latched for inspection instead of silently retrying commands indefinitely. A service timeout can mean the robot received the command even though HA did not receive a result. The robot may still be moving: inspect it or press Pause & dock. Retry is allowed while docked. A proved successful clean can retry only its dock service rather than clean the same room again. Manually confirm cleaned is an explicit, logged user override allowed while docked; it is not labelled as an automatic successful robot report.
+Faults are never retried blindly. A service timeout can mean the robot received the command even though HA did not receive a result, so Dobby waits until it independently observes the robot docked and healthy before retrying, with a small per-room daily limit (see 0.2.0 above). Manual Retry is still allowed while docked. A proved successful clean can retry only its dock service rather than clean the same room again. Manually confirm cleaned is an explicit, logged user override allowed while docked; it is not labelled as an automatic successful robot report.
 
 **Do not run native robot-app schedules, other room scripts or whole-home clean commands concurrently.** Other HA commands are detected where their target can be identified. Commands from the robot app or physical robot buttons are not completely observable, and a successful record does not prove exclusive ownership at the protocol level. One controller at a time is a requirement, not a promise this integration can enforce across all apps.
 

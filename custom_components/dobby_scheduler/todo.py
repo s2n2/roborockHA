@@ -49,6 +49,8 @@ class DobbyTodo(DobbyEntity, TodoListEntity):
                                       "executed_mode": j.get("executed_mode"),
                                       "mopping_skipped": j.get("mopping_skipped", False),
                                       "result": j.get("result", ""),
+                                      "skipped_today": bool(j.get("skipped")),
+                                      "auto_retries": j.get("auto_retries", 0),
                                       "fallback_reason": a.get("fallback_reason", j.get("fallback_reason", ""))}, indent=2)
             args = {"summary": r.get("name", j["area_id"]), "uid": j["uid"],
                     "status": TodoItemStatus.COMPLETED if j["status"] == "completed" else TodoItemStatus.NEEDS_ACTION,
