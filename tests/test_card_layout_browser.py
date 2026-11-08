@@ -118,7 +118,7 @@ def run():
                     check(page.locator('.roomlayout section h3').inner_text()=='Lounge',f'mobile Area selector works: {viewport}px')
                     page.locator('#room-choice').select_option('kitchen')
                 if tab=='settings':
-                    check(page.locator('.settings-section').count()==3,f'settings grouped into robot, schedule and activity sections: {viewport}px')
+                    check(page.locator('.settings-section').count()==4,f'settings grouped into robot, schedule, faults and activity sections: {viewport}px')
                     page.locator('[data-action="save-settings"]').scroll_into_view_if_needed()
                     head=page.locator('.dialoghead').bounding_box()
                     check(head['y']>=0 and head['y']<100,f'popup header stays visible when pane scrolls: {viewport}px')

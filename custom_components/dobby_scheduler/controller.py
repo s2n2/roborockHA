@@ -18,6 +18,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .activity import ActivityTracker, resolve_room
+from .alerts import Alerts, RETRY_ACTION
 from .gestures import (GESTURE_LABELS, PRESS_ALIASES, STATE_DOMAINS, PRESS_DOMAINS, PressDetector, resolve_gesture)
 from .const import VERSION
 from .engine import Engine, GestureDetector, DEFAULTS, resolve_mode, validate_segments, number, clock_minutes, cleaning_day
@@ -112,6 +113,7 @@ class DobbyController:
         self.activity = {}
         self.activity_sources = {}
         self.activity_watched = set()
+        self.alerts = Alerts(hass, DOMAIN, getattr(entry, "title", "Dobby Scheduler"))
 
     async def async_load(self):
         saved = await self.store.async_load() or {}
@@ -128,9 +130,35 @@ class DobbyController:
             self.hass.bus.async_listen("entity_registry_updated", self._registry_changed),
             self.hass.bus.async_listen("device_registry_updated", self._registry_changed),
             self.hass.bus.async_listen("label_registry_updated", self._registry_changed),
+            self.hass.bus.async_listen("mobile_app_notification_action", self._notification_action),
             async_track_time_interval(self.hass, self._timer, timedelta(seconds=5)),
         ]
+        # Repairs issues are not persistent: re-raise quietly after a restart if
+        # Dobby is still waiting for a person, and drop any stale one otherwise.
+        now = time.time()
+        if self.engine.fault and self.engine.needs_attention(now, self.settings):
+            self.engine._attention_sent = True
+            self.alerts.raise_issue(self.entry.entry_id, self.engine.fault)
+        elif not self.engine.fault:
+            self.alerts.clear_issue(self.entry.entry_id)
         self.kick()
+
+    @callback
+    def _notification_action(self, event):
+        if (event.data or {}).get("action") == RETRY_ACTION and self.engine.fault:
+            self.hass.async_create_task(self._retry_from_notification())
+
+    async def _retry_from_notification(self):
+        try:
+            await self.command("retry")
+        except Exception as err:
+            await self.alerts.notify(self.settings.get("notify_service", ""),
+                                     f"{self.entry.title} could not retry", str(err), retry=True)
+
+    async def deliver_alerts(self):
+        events, self.engine.events = self.engine.events, []
+        if events:
+            await self.alerts.handle(events, self.entry.entry_id, self.settings.get("notify_service", ""))
 
     async def async_unload(self):
         self.stopped = True
@@ -576,6 +604,7 @@ this record through its coordinator. Any incompatible layout fails closed.
                 effects = self.engine.tick(t, self.settings, self.rooms, dt_util.now())
                 await self.persist()  # Commit intent before issuing any robot command.
                 self.publish()
+                await self.deliver_alerts()
                 for effect in effects:
                     try:
                         await self.execute(effect)
@@ -655,6 +684,11 @@ this record through its coordinator. Any incompatible layout fails closed.
                                    for j in self.engine.immediate_jobs()],
                "active": deepcopy(self.engine.active), "reason": self.engine.wait_reason,
                "fault": self.engine.fault, "day": self.engine.day, "jobs": jobs,
+               "fault_retry": self.engine.retry_status(self.settings) if self.engine.fault else None,
+               "needs_attention": self.engine.needs_attention(time.time(), self.settings),
+               "auto_retries": self.settings["auto_retries"],
+               "skipped_rooms": [self.rooms.get(j["area_id"], {}).get("name", j["area_id"])
+                                 for j in self.engine.jobs if j.get("skipped")],
                "vacuum_on_water_problem": self.settings["vacuum_on_water_problem"],
                "rooms": list(self.rooms.values()), "maps": self.maps, "maps_at": self.maps_at,
                "telemetry": self.last_telemetry, "backend": self.backend_detail,
@@ -728,7 +762,8 @@ this record through its coordinator. Any incompatible layout fails closed.
                 ranges = {"away_minutes": (0, 120), "minimum_battery": (10, 100), "gesture_seconds": (0.5, 5), "gesture_cooldown": (2, 30),
                           "start_timeout": (60, 900), "room_timeout": (600, 21600), "dock_timeout": (60, 1800),
                           "proof_timeout": (60, 900), "empty_timeout": (60, 900), "dock_settle": (5, 120),
-                          "room_confirm_seconds": (1, 600)}
+                          "room_confirm_seconds": (1, 600), "auto_retries": (0, 5),
+                          "recovery_delay": (30, 3600), "attention_after": (1, 240)}
                 lo, hi = ranges[key]
                 if not lo <= n <= hi:
                     raise ValueError(f"{key} must be between {lo} and {hi}")
@@ -740,6 +775,14 @@ this record through its coordinator. Any incompatible layout fails closed.
                 raise ValueError(f"Invalid text for {key}")
             if key in ("window_start", "window_end", "reset_time"):
                 clock_minutes(value)
+            if key == "notify_service" and value:
+                value = value.strip()
+                domain, _, name = value.partition(".")
+                if domain != "notify" or not name or not name.replace("_", "").isalnum():
+                    raise ValueError("Notify target must look like notify.mobile_app_your_phone")
+                has_service = getattr(self.hass.services, "has_service", None)
+                if has_service and not has_service("notify", name):
+                    raise ValueError(f"{value} is not an available notify action")
             if key.endswith("_entity") and value:
                 expected = {"vacuum_entity": ["vacuum"], "presence_entity": ["binary_sensor", "input_boolean"],
                             "mode_entity": ["select"], "battery_entity": ["sensor"], "error_entity": ["sensor"],
@@ -904,5 +947,6 @@ this record through its coordinator. Any incompatible layout fails closed.
                 raise ValueError("Unsupported Dobby command")
             await self.persist()
             self.publish()
+            await self.deliver_alerts()
         self.kick()
         return result or {"ok": True}

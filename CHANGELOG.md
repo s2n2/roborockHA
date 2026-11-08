@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 - Self-healing faults
+
+- Any robot/command fault now clears itself once Dobby is observed docked, both
+  error sensors read ok, configured dock services read off, and that state has
+  held for `recovery_delay` (default 120 s). Replaces the APP_CHARGE-only recovery.
+- Per-room daily retry budget `auto_retries` (default 2). When it is used up
+  the room is marked skipped for today and the queue continues. Skipped rooms
+  return at the nightly reset or when they are queued again.
+- Faults with no room attached (e.g. after the daily reset) recover up to
+  3 times per day. Internal `scheduler:` errors never auto-clear.
+- `attention_after` (default 15 min): if a fault has not cleared by then, a
+  Repairs issue is raised and an optional `notify_service` message is sent, with
+  a Retry action on mobile_app notifications. The issue is removed when the fault clears.
+- Status sensor: `recovering` vs `attention`. New attributes `needs_attention`,
+  `auto_retries_used`, `auto_retries_limit`, `skipped_rooms`. The pending count
+  and next room ignore skipped rooms. To-do descriptions include `skipped_today`
+  and `auto_retries`.
+- Card: calm "Recovering automatically" banner, "Dobby needs you" alert,
+  "Skipped today" list, and a new Faults & notifications settings section.
+- Repository tidy: removed committed `__pycache__` and generated test output,
+  moved upgrade notes to `docs/upgrades/`, and added `.gitignore` and GitHub
+  validation workflows (HACS, hassfest, tests).
+- Upgrading keeps the existing config entry, queue and settings. A fault saved
+  by 0.1.x is picked up by the new recovery automatically.
+
 ## 0.1.9 - Safe automatic recovery from APP_CHARGE command faults
 
 - The scheduler automatically reconciles an old `dock: Error while calling APP_CHARGE` when a scheduled, manual or gesture-requested cleaning attempt is eligible. Requires a continuously confirmed docked state, healthy available robot/dock sensors, idle dock services, and existing map/battery/queue safety checks.

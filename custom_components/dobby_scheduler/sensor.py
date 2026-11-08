@@ -1,5 +1,7 @@
 """Status and queue-count entities reusable outside the bundled card."""
 from homeassistant.components.sensor import SensorEntity
+import time
+
 from .entity import DobbyEntity
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -13,14 +15,23 @@ class DobbyStatus(DobbyEntity, SensorEntity):
     @property
     def native_value(self):
         e = self.controller.engine
-        return "attention" if e.fault else (e.active["phase"] if e.active else "waiting" if e.enabled or e.manual or e.immediate_jobs() else "disabled")
+        if e.fault:
+            # "recovering" = self-healing in progress; "attention" = a person is needed.
+            return "attention" if e.needs_attention(time.time(), self.controller.settings) else "recovering"
+        return (e.active["phase"] if e.active else "waiting" if e.enabled or e.manual or e.immediate_jobs() else "disabled")
     @property
     def extra_state_attributes(self):
         c = self.controller
         return {"reason": c.engine.wait_reason, "current_room": (c.engine.active or {}).get("name"),
                 "next_room": next((c.rooms.get(j["area_id"], {}).get("name", j["area_id"]) for j in c.engine.jobs
-                                  if j["status"] == "needs_action" and j["uid"] != (c.engine.active or {}).get("uid")), None),
+                                  if j["status"] == "needs_action" and not j.get("skipped")
+                                  and j["uid"] != (c.engine.active or {}).get("uid")), None),
                 "cleaning_day": c.engine.day, "fault": c.engine.fault, "backend": c.backend_detail,
+                "needs_attention": c.engine.needs_attention(time.time(), c.settings),
+                "auto_retries_used": c.engine.retry_status(c.settings)["used"] if c.engine.fault else 0,
+                "auto_retries_limit": c.settings["auto_retries"],
+                "skipped_rooms": [c.rooms.get(j["area_id"], {}).get("name", j["area_id"])
+                                  for j in c.engine.jobs if j.get("skipped")],
                 "reset_deferred": c.engine.reset_deferred,
                 "immediate_requested_rooms": [c.rooms.get(j["area_id"], {}).get("name", j["area_id"])
                                              for j in c.engine.immediate_jobs()],
@@ -40,7 +51,10 @@ class DobbyCount(DobbyEntity, SensorEntity):
         super().__init__(c, "completed" if completed else "pending", "Completed rooms" if completed else "Pending rooms", "sensor")
     @property
     def native_value(self):
-        return sum((j["status"] == "completed") == self.completed for j in self.controller.engine.jobs)
+        jobs = self.controller.engine.jobs
+        if self.completed:
+            return sum(j["status"] == "completed" for j in jobs)
+        return sum(j["status"] == "needs_action" and not j.get("skipped") for j in jobs)
 
 
 class DobbyActivity(DobbyEntity, SensorEntity):

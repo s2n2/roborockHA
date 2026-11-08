@@ -30,7 +30,15 @@ DEFAULTS = {
     # Optional read-only reporting sources; blank = conventional-name discovery.
     "current_room_entity": "", "status_entity": "", "dock_error_entity": "",
     "drying_entity": "", "room_confirm_seconds": 60,
+    # 0.2.0 self-healing faults: automatic retries per room per day, how long
+    # Dobby must sit docked and healthy before a retry, when to ask a person
+    # (minutes after that), and an optional notify action for those messages.
+    "auto_retries": 2, "recovery_delay": 120, "attention_after": 15,
+    "notify_service": "",
 }
+
+# Faults raised by the scheduler's own code are never auto-cleared.
+NON_RECOVERABLE_PREFIXES = ("scheduler:",)
 
 
 def number(value):
@@ -145,6 +153,9 @@ class Engine:
         self.enabled = bool(d.get("enabled", False))
         self.day = d.get("day", "")
         self.fault = d.get("fault", "")
+        self.fault_uid = d.get("fault_uid")
+        self.fault_at = d.get("fault_at")
+        self.anonymous_recoveries = int(d.get("anonymous_recoveries", 0) or 0)
         self.log = d.get("log", [])[-60:]
         self.manual = False  # Never restore permission to run in an occupied house.
         self.allow_home = False
@@ -157,7 +168,10 @@ class Engine:
         self.last_effects = []
         # Runtime-only debounce: a transient docking RPC failure is not proof of
         # dock readiness. Require two settled observations before reconsidering it.
-        self._recoverable_dock_since = None
+        self._recover_since = None
+        # Runtime-only notifications for the adapter to deliver; never persisted.
+        self.events = []
+        self._attention_sent = False
         if self.active:
             self.active.update(phase="aborting", interrupted=True,
                                reason="Home Assistant restarted; room remains pending",
@@ -166,7 +180,10 @@ class Engine:
     def export(self):
         return deepcopy({"jobs": self.jobs, "active": self.active,
                          "enabled": self.enabled, "day": self.day,
-                         "fault": self.fault, "log": self.log[-60:]})
+                         "fault": self.fault, "fault_uid": self.fault_uid,
+                         "fault_at": self.fault_at,
+                         "anonymous_recoveries": self.anonymous_recoveries,
+                         "log": self.log[-60:]})
 
     def note(self, text, now):
         self.log.append({"at": now, "message": str(text)[:500]})
@@ -223,7 +240,8 @@ class Engine:
         # A fresh explicit request is a new opportunity; a repeated command
         # failure within the same attempt will still require manual checking.
         if not self.active or self.active["uid"] != j["uid"]:
-            j.pop("dock_auto_retry_used", None)
+            for key in ("dock_auto_retry_used", "auto_retries", "skipped", "skipped_reason"):
+                j.pop(key, None)
         if urgent and (not self.active or self.active["uid"] != j["uid"]):
             self.jobs.remove(j)
             self.jobs.insert(0, j)
@@ -262,12 +280,33 @@ class Engine:
                 self.enqueue(r["area_id"], rooms, now, source="daily")
         self.manual = self.allow_home = False
         self.reset_deferred = False
+        # Yesterday's per-room retry budgets go with yesterday's jobs. A fault that
+        # is still present is no longer tied to a queued room; recovery still needs
+        # a healthy docked robot, so a genuinely stuck Dobby keeps waiting.
+        self.fault_uid = None
+        self.anonymous_recoveries = 0
         self.note("Restored daily rooms and default order", now)
         return True
 
+    def _set_fault(self, text, now):
+        if not self.fault:
+            self.fault_at = now
+            self._attention_sent = False
+        self.fault = text
+        self.fault_uid = (self.active or {}).get("uid") or self.fault_uid
+        self._recover_since = None
+
+    def clear_fault(self):
+        self.fault = ""
+        self.fault_uid = self.fault_at = None
+        self._recover_since = None
+        if self._attention_sent:
+            self.events.append({"kind": "resolved"})
+        self._attention_sent = False
+
     def abort(self, reason, now, latch=False, keep_immediate=False):
         if latch:
-            self.fault = reason
+            self._set_fault(reason, now)
         if self.active and self.active["phase"] != "aborting":
             self.active.update(phase="aborting", interrupted=True, reason=reason,
                                dock_issued=0, dock_attempts=0)
@@ -277,86 +316,106 @@ class Engine:
             self.clear_immediate()
 
     def fault_effect(self, effect, error, now):
-        self.fault = f"{effect}: {error}"
+        self._set_fault(f"{effect}: {error}", now)
         self.note(self.fault, now)
         if self.active:
             self.active["reason"] = self.fault
             self.active["command_uncertain"] = True
         # A failed service is not automatically retried: the robot may have received it.
 
-    def _recover_transient_dock_fault(self, t, cfg, rooms, local_now):
-        """Retry an APP_CHARGE *transport-command* failure, never a robot fault.
+    @staticmethod
+    def fault_recoverable(fault):
+        return bool(fault) and not fault.startswith(NON_RECOVERABLE_PREFIXES)
 
-        This is a one-time, on-demand reconciliation, not a blanket error reset.
-        A failed docking command may have reached the robot despite HA reporting
-        a failure. We therefore require a settled, independently observed dock,
-        no physical errors/service activity, and a job that is permitted to run
-        NOW. Active jobs retain their clean-proof state if already verified;
-        unproved jobs stay pending to be cleaned again from the beginning.
+    @staticmethod
+    def hardware_healthy(t, cfg):
+        """Observed, settled-at-rest readings; never inferred from the fault text.
+
+        Configured dock-service switches must positively read off: unknown is
+        treated as busy. The robot and dock error sensors must both read ok.
         """
-        fault = self.fault
-        if not (fault.startswith("dock: ") and "APP_CHARGE" in fault.upper()):
-            self._recoverable_dock_since = None
+        def idle(key, entity):
+            return t.get(key) is False if cfg.get(entity) else t.get(key) is not True
+        return bool(t.get("connected") and t.get("vacuum") == "docked"
+                    and t.get("error") == "ok" and t.get("dock_error", "ok") == "ok"
+                    and not t.get("blockers") and not t.get("legacy")
+                    and idle("emptying", "empty_entity") and idle("washing", "wash_entity"))
+
+    def needs_attention(self, now, cfg):
+        """True when a person is needed: not self-healing, or not healed in time."""
+        if not self.fault:
+            return False
+        if not self.fault_recoverable(self.fault):
+            return True
+        started = self.fault_at if self.fault_at is not None else now
+        return now - started >= cfg["recovery_delay"] + cfg["attention_after"] * 60
+
+    def retry_status(self, cfg):
+        j = self.find(self.fault_uid) if self.fault_uid else None
+        return {"used": (j or {}).get("auto_retries", 0), "limit": cfg["auto_retries"],
+                "room_uid": self.fault_uid,
+                "recoverable": self.fault_recoverable(self.fault),
+                "checking": self._recover_since is not None}
+
+    def _auto_recover(self, t, cfg, now, rooms=None):
+        """Clear a latched fault once Dobby is independently docked and healthy.
+
+        Each room has a small daily retry budget. When it is spent the room is
+        skipped for today and the rest of the queue continues. Clearing a fault
+        never starts work by itself: every normal schedule, presence, window,
+        battery, map and preflight check still applies to the next room.
+        """
+        if self.fault_at is None:
+            self.fault_at = now  # Fault saved by an older version.
+        if not self.fault_recoverable(self.fault):
             return False
         a = self.active
         if a and a.get("phase") == "aborting":
-            self._recoverable_dock_since = None
+            self._recover_since = None
             return False
-        self._order_immediate()
-        j = (self.find(a["uid"]) if a else
-             next((row for row in self.jobs if row["status"] == "needs_action"), None))
-        if not j or j.get("status") != "needs_action" or j.get("dock_auto_retry_used"):
-            self._recoverable_dock_since = None
+        if not self.hardware_healthy(t, cfg):
+            self._recover_since = None
             return False
-        immediate = self.is_immediate(j["uid"])
-        home = t.get("home")
-        if (not (self.enabled or self.manual or immediate)
-                or (not immediate and not in_window(local_now, cfg["window_start"], cfg["window_end"]))
-                or home is None or (home and not (self.allow_home or immediate))
-                or (not (self.manual or immediate) and
-                    (self.away_since is None or
-                     t["now"] - self.away_since < cfg["away_minutes"] * 60))):
-            self._recoverable_dock_since = None
+        if self._recover_since is None:
+            self._recover_since = now
+        delay = max(cfg["recovery_delay"], cfg["dock_settle"])
+        remaining = delay - (now - self._recover_since)
+        if remaining > 0:
+            self.wait_reason = f"{self.fault} - retrying automatically in {math.ceil(remaining)} s"
             return False
-        # These are observations, not an inference from the command exception.
-        if (not t.get("connected") or t.get("vacuum") != "docked"
-                or t.get("error") != "ok" or t.get("dock_error") != "ok"
-                or t.get("blockers") or t.get("legacy")
-                or t.get("emptying") is not False
-                or t.get("washing") is not False):
-            self._recoverable_dock_since = None
+        fault = self.fault
+        uid = (a or {}).get("uid") or self.fault_uid
+        j = self.find(uid) if uid else None
+        if j and j.get("status") == "needs_action":
+            used = j.get("auto_retries", 0) + 1
+            j["auto_retries"] = used
+            if used > cfg["auto_retries"]:
+                name = (a or {}).get("name") or (rooms or {}).get(j["area_id"], {}).get("name") or j["area_id"]
+                reason = f"Skipped for today after {used - 1} automatic retries: {fault}"
+                j.update(skipped=True, skipped_reason=reason, reason=reason)
+                self.gesture_requests.pop(j["uid"], None)
+                if a and a.get("uid") == j["uid"]:
+                    self.active = None
+                self.note(f"{name}: {reason}", now)
+                self.events.append({"kind": "skipped", "room": name, "area_id": j["area_id"], "reason": fault})
+                self.clear_fault()
+                return True
+            self.retry(now, docked=True)
+            self.note(f"Automatic retry {used} of {cfg['auto_retries']} after: {fault}", now)
+            return True
+        # Not tied to a pending room (e.g. after the daily reset). Bound these
+        # too so a fault that keeps reappearing ends up asking for a person.
+        if self.anonymous_recoveries >= 3:
             return False
-        # Full preflight prevents clearing the error merely to expose a different
-        # unsafe start condition. For an existing owned job, the same room/map is
-        # checked but completion proof is preserved by retry() when present.
-        r = rooms.get(j["area_id"])
-        if self._preflight(t, cfg, r, j):
-            self._recoverable_dock_since = None
-            return False
-        if a and (a.get("map_name") != t.get("map_name") or
-                  a.get("interrupted") and a.get("proved")):
-            self._recoverable_dock_since = None
-            return False
-        now = t["now"]
-        if self._recoverable_dock_since is None:
-            self._recoverable_dock_since = now
-            self.wait_reason = "Checking dock before automatically retrying"
-            return False
-        self.wait_reason = "Checking dock before automatically retrying"
-        if now - self._recoverable_dock_since < cfg["dock_settle"]:
-            return False
-        # Persist the retry limit as part of the job, so restarting HA cannot
-        # cause endless replays of a repeatedly rejected dock command.
-        j["dock_auto_retry_used"] = True
+        self.anonymous_recoveries += 1
         self.retry(now, docked=True)
-        self.note("Automatically cleared transient APP_CHARGE error after safe dock verification", now)
-        self._recoverable_dock_since = None
+        self.note(f"Automatically cleared after a healthy dock check: {fault}", now)
         return True
 
     def retry(self, now, docked):
         if not docked:
             raise ValueError("Dock Dobby before retrying")
-        self.fault = ""
+        self.clear_fault()
         a = self.active
         if a and a.get("proved") and not a.get("interrupted"):
             a.update(phase="verifying", docked_since=now, phase_at=now,
@@ -387,7 +446,7 @@ class Engine:
         self.gesture_requests.pop(uid, None)
         if a:
             self.active = None
-            self.fault = ""
+            self.clear_fault()
         self.note("User manually marked a room complete", now)
 
     @staticmethod
@@ -492,7 +551,10 @@ class Engine:
         if day != self.day:
             self.reset(day, rooms, now)
         if self.fault:
-            self._recover_transient_dock_fault(t, cfg, rooms, local_now)
+            self._auto_recover(t, cfg, now, rooms)
+            if self.fault and self.needs_attention(now, cfg) and not self._attention_sent:
+                self._attention_sent = True
+                self.events.append({"kind": "attention", "fault": self.fault})
         if self.active:
             a = self.active
             immediate = self.is_immediate(a["uid"])
@@ -555,7 +617,8 @@ class Engine:
                     effects.append({"kind": "dock"})
                 return effects
             if self.fault:
-                self.wait_reason = self.fault
+                if self._recover_since is None:
+                    self.wait_reason = self.fault
                 return []
             if not t.get("connected"):
                 a.setdefault("lost_since", now)
@@ -704,12 +767,13 @@ class Engine:
                 return []
             return []
         if self.fault:
-            self.wait_reason = self.fault
+            if self._recover_since is None:
+                self.wait_reason = self.fault
             return []
         # Select request-only work BEFORE applying the automatic-schedule gates.
         # Permission is per job, not self.manual/allow_home for the whole queue.
         self._order_immediate()
-        j = next((j for j in self.jobs if j["status"] == "needs_action"), None)
+        j = next((j for j in self.jobs if j["status"] == "needs_action" and not j.get("skipped")), None)
         immediate = bool(j and self.is_immediate(j["uid"]))
         if not (self.enabled or self.manual or immediate):
             self.wait_reason = "Scheduler disabled"

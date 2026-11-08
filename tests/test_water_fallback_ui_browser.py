@@ -55,7 +55,7 @@ def run():
         page.evaluate("""async()=>{demo.jobs[1].water_fallback=true;demo.jobs[1].name='<img src=x onerror=alert(1)>';
           await document.querySelector('dobby-scheduler-card').refresh();}""")
         assert page.locator('.water-fallback img').count()==0;checks.append('fallback names HTML escaped')
-        page.evaluate("""async()=>{demo.fault='Vacuum error';await document.querySelector('dobby-scheduler-card').refresh();}""")
+        page.evaluate("""async()=>{demo.fault='Vacuum error';demo.needs_attention=true;await document.querySelector('dobby-scheduler-card').refresh();}""")
         assert page.locator('.water-fallback:visible').count()==0 and 'Vacuum error' in page.locator('[role=alert]').inner_text();checks.append('real fault not disguised by fallback banner')
         page.locator('[data-action=setup]').first.click()
         page.locator('[data-action=tab][data-id=help]').click()
