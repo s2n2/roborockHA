@@ -1,4 +1,9 @@
-# Validation for 0.1.9
+# Validation for 0.2.0
+
+See docs/validation-0.2.0.txt for checks actually run for this release.
+Earlier release results below remain historical.
+
+# Validation for 0.1.9 (historical)
 
 See docs/validation-0.1.9.txt for checks actually run for this release. Earlier
 release results below remain historical; they were not all re-run for 0.1.8.

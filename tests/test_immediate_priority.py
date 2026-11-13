@@ -199,13 +199,15 @@ def test_midroom_water_loss_preserves_other_immediate_requests_after_redock():
     assert e.active['area_id']=='kitchen' and e.active['start_policy']=='gesture'
 
 
-def test_empty_timeout_still_faults_not_done():
+def test_empty_timeout_keeps_proved_clean_and_does_not_block():
     e,c,r,t=setup();e.enabled=False;t['home']=True
     request(e,r,t,'kitchen');at=start(e,c,r,t)
     step(e,c,r,t,seconds=200,vacuum='docked',record=finish_record(at))
     assert step(e,c,r,t,seconds=11)==[{'kind':'empty'}]
     step(e,c,r,t,seconds=250)
-    assert e.fault and not any(j['status']=='completed' for j in e.jobs)
+    kitchen=next(j for j in e.jobs if j['area_id']=='kitchen')
+    assert not e.fault and e.active is None and kitchen['status']=='completed'
+    assert 'empty not confirmed' in kitchen['reason']
 
 
 @pytest.mark.parametrize('updates',[{'blockers':True},{'home':None},{'map_name':'Wrong map'}])

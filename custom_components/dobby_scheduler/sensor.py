@@ -20,7 +20,8 @@ class DobbyStatus(DobbyEntity, SensorEntity):
         return {"reason": c.engine.wait_reason, "current_room": (c.engine.active or {}).get("name"),
                 "next_room": next((c.rooms.get(j["area_id"], {}).get("name", j["area_id"]) for j in c.engine.jobs
                                   if j["status"] == "needs_action" and j["uid"] != (c.engine.active or {}).get("uid")), None),
-                "cleaning_day": c.engine.day, "fault": c.engine.fault, "backend": c.backend_detail,
+                "cleaning_day": c.engine.day, "fault": c.engine.fault,
+                "last_issue": (c.engine.issue or {}).get("message"), "backend": c.backend_detail,
                 "reset_deferred": c.engine.reset_deferred,
                 "immediate_requested_rooms": [c.rooms.get(j["area_id"], {}).get("name", j["area_id"])
                                              for j in c.engine.immediate_jobs()],

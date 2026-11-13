@@ -143,7 +143,9 @@ def test_dock_alone_never_completes():
     e,c,r,t=setup();start(e,c,r,t)
     step(e,c,r,t,seconds=200,vacuum='docked')
     step(e,c,r,t,seconds=250)
-    assert e.jobs[0]['status']=='needs_action' and e.fault
+    assert e.jobs[0]['status']=='needs_action' and not e.fault and e.issue
+    step(e,c,r,t)
+    assert e.active is None and e.jobs[0]['failed_attempts']==1
 
 
 @pytest.mark.parametrize('change',[{'complete':0},{'error':1},{'area':0},{'map_flag':3},{'begin':NOW-1000},{'end':NOW+90000}])
@@ -186,14 +188,13 @@ def test_restart_recovers_owned_job_without_success():
     assert new.active is None and new.jobs[0]['status']=='needs_action'
 
 
-def test_empty_timeout_requires_attention_not_success():
+def test_empty_timeout_keeps_proved_clean_without_blocking():
     e,c,r,t=setup();at=start(e,c,r,t)
     step(e,c,r,t,seconds=200,vacuum='docked',record=finish_record(at));step(e,c,r,t,seconds=11)
     step(e,c,r,t,seconds=250)
-    assert e.fault and e.jobs[0]['status']=='needs_action'
-    e.retry(t['now'],True)
-    assert e.active['proved'] and e.active['phase']=='verifying'
-    assert step(e,c,r,t,seconds=11)==[{'kind':'empty'}]
+    # The clean was proved by the robot's record; only emptying was unconfirmed.
+    assert not e.fault and e.active is None and e.jobs[0]['status']=='completed'
+    assert 'empty not confirmed' in e.jobs[0]['reason'] and e.issue
 
 
 def test_physical_low_battery_return_requeues():

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0 - No blocking errors
+
+- No error needs acknowledging any more. The latched fault and the
+  **Retry after checking** button are gone.
+- Dobby-level problems (failed commands, missing clean record, timeouts, lost
+  connection, internal errors) are logged, the robot docks, the room stays pending
+  and the queue carries on after about two minutes. An internal error no longer
+  switches the schedule off.
+- A room that fails 3 times in a day is skipped (not blocked) until it is
+  requested again or the next daily reset; other rooms keep running.
+- A proved clean is kept when only dock/empty confirmation fails, instead of
+  re-cleaning the room.
+- Dobby only pauses for errors the Roborock itself reports (vacuum error or dock
+  error sensor). The card mirrors that error and resumes as soon as it clears.
+  An unavailable error sensor still waits at pre-flight but is not shown as a
+  Roborock fault.
+- Faults saved by older versions are dropped on upgrade. The 0.1.9 APP_CHARGE
+  auto-recovery is superseded and removed.
+- `dobby_scheduler.retry` is kept for compatibility; it now only clears the
+  last-problem notice and gives skipped rooms another chance.
+- New `last_issue` status attribute; `fault` now means a Roborock-reported error only.
+
 ## 0.1.9 - Safe automatic recovery from APP_CHARGE command faults
 
 - The scheduler automatically reconciles an old `dock: Error while calling APP_CHARGE` when a scheduled, manual or gesture-requested cleaning attempt is eligible. Requires a continuously confirmed docked state, healthy available robot/dock sensors, idle dock services, and existing map/battery/queue safety checks.

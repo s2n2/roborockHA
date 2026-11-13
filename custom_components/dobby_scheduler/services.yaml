@@ -28,8 +28,8 @@ reset:
   name: Restore daily rooms
   description: Replace today's list with dobby_daily Areas in default order. Refused while a job is active.
 retry:
-  name: Retry after checking Dobby
-  description: Clear a fault while docked. If cleaning was proved, retry dock service only; otherwise leave the room pending for a fresh clean.
+  name: Give skipped rooms another chance
+  description: No longer needed for errors, which clear automatically. Clears the last-problem notice and lets rooms skipped after repeated failures run again.
 enable:
   name: Set automatic scheduling
   fields:

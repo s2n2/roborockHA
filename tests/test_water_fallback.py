@@ -2,7 +2,7 @@
 from copy import deepcopy
 from datetime import timedelta
 import pytest
-from test_engine import setup, step, start, finish_record, Engine, NOW, LOCAL
+from test_engine import setup, step, start, finish_record, Engine, NOW, LOCAL, m
 
 
 def shortage(t):
@@ -104,7 +104,8 @@ def test_vacuum_mode_support_and_confirmation_required():
     assert step(e,c,r,t,mode='vac_and_mop')==[]
     assert e.active['command_at'] is None
     assert step(e,c,r,t,seconds=c['start_timeout']+1)==[]
-    assert e.fault.startswith('set_mode:')
+    assert not e.fault and e.issue['message'].startswith('set_mode:')
+    assert e.active['phase']=='aborting' and e.jobs[0]['status']=='needs_action'
 
 
 def test_mop_wash_sensor_unknown_is_not_ready_to_launch_fallback():
@@ -230,11 +231,12 @@ def test_existing_manual_permission_survives_internal_water_redock_only():
     assert not restored.manual and not restored.allow_home
 
 
-def test_faulted_old_version_requires_retry_then_uses_fallback():
-    e,c,r,t=setup();shortage(t);e.fault='Water system needs attention'
-    assert step(e,c,r,t)==[] and e.active is None
-    e.retry(t['now'],docked=True)
-    assert step(e,c,r,t)[0]['option']=='vacuum'
+def test_fault_saved_by_old_version_clears_on_upgrade_and_uses_fallback():
+    e,c,r,t=setup();shortage(t)
+    saved=e.export();saved['fault']='Water system needs attention'
+    e2=Engine(saved);e2.enabled=True;e2.away_since=e.away_since
+    assert not e2.fault
+    assert step(e2,c,r,t)[0]['option']=='vacuum'
 
 
 def test_restart_preserves_completed_result_but_never_completes_inflight():
@@ -268,18 +270,24 @@ def test_successful_wet_record_then_empty_water_does_not_repeat_clean():
     assert e.jobs[0]['executed_mode']=='vac_and_mop'
 
 
-def test_uncertain_water_during_wet_run_still_latches_fault():
+def test_uncertain_water_during_wet_run_docks_without_latching():
     e,c,r,t=setup();start(e,c,r,t)
     step(e,c,r,t,wet_ok=False,water_problem=False,water_status_known=False)
-    assert e.active['phase']=='aborting' and e.fault
+    assert e.active['phase']=='aborting' and not e.fault
+    step(e,c,r,t,vacuum='docked')
+    assert e.active is None and e.jobs[0]['status']=='needs_action'
+    # Pre-flight keeps waiting for a known water state; nothing to acknowledge.
+    assert step(e,c,r,t)==[] and 'water' in e.wait_reason.lower()
 
 
-def test_emptying_failure_still_latches_and_no_false_done():
+def test_emptying_failure_after_proved_dry_clean_completes_without_blocking():
     e,c,r,t=setup();shortage(t);at=dry_start(e,c,r,t)
     step(e,c,r,t,seconds=200,vacuum='docked',record=finish_record(at))
     step(e,c,r,t,seconds=11)
     step(e,c,r,t,seconds=c['empty_timeout']+1)
-    assert e.fault.startswith('empty:') and e.jobs[0]['status']=='needs_action'
+    j=e.jobs[0]
+    assert not e.fault and e.issue['message'].startswith('empty:')
+    assert j['status']=='completed' and j['mopping_skipped'] and 'empty not confirmed' in j['reason']
 
 
 def test_manual_confirmation_of_fallback_is_explicit_not_robot_proof():
@@ -295,7 +303,8 @@ def test_dry_fallback_does_not_accept_failed_clean_record():
     bad=finish_record(at);bad['complete']=0
     step(e,c,r,t,seconds=200,vacuum='docked',record=bad)
     step(e,c,r,t,seconds=c['proof_timeout']+1)
-    assert e.jobs[0]['status']=='needs_action' and e.fault.startswith('completion:')
+    assert e.jobs[0]['status']=='needs_action' and not e.fault
+    assert e.issue['message'].startswith('completion:')
 
 
 def test_real_robot_error_during_dry_fallback_still_aborts():
@@ -323,8 +332,12 @@ def test_failed_dock_cancel_does_not_automatically_start_replacement():
     e,c,r,t=setup();start(e,c,r,t);shortage(t);step(e,c,r,t)
     assert step(e,c,r,t)==[{'kind':'dock'}]
     e.fault_effect('dock','no acknowledgement',t['now'])
-    assert step(e,c,r,t,vacuum='docked',seconds=100)==[]
-    assert e.fault and e.active and e.jobs[0]['status']=='needs_action'
+    assert step(e,c,r,t,vacuum='docked',seconds=1)==[]
+    assert not e.fault and e.active and e.jobs[0]['status']=='needs_action'
+    # Settled dock clears the job; the replacement waits out the short pause.
+    step(e,c,r,t,seconds=c['dock_settle']+1);step(e,c,r,t)
+    assert e.active is None and step(e,c,r,t)==[]
+    assert step(e,c,r,t,seconds=m.RETRY_DELAY)[0]['option']=='vacuum'
 
 
 def test_configured_unknown_wash_blocks_redock_completion():

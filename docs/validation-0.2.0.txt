@@ -1,0 +1,19 @@
+Dobby Scheduler v0.2.0
+Base: GitHub main at 0.1.9.
+
+Change: no latched/blocking errors. Dobby-level problems are logged and clear
+automatically (room pending, ~2 min pause, skip after 3 failures per day).
+Only Roborock-reported vacuum/dock errors pause Dobby, mirrored live and cleared
+when the vacuum clears them. Retry button removed; retry service retired.
+
+Checks performed locally:
+- pytest -q: 441 passed (tests/test_auto_clear_errors.py replaces
+  tests/test_dock_auto_recovery.py).
+- node --check custom card: PASS.
+- node tests/check_card_registration.cjs: PASS.
+- python scripts/check_repository.py: PASS.
+- Playwright browser scripts (tests/*_browser.py): NOT RUN - Chromium was not
+  installed on the machine used.
+
+Not run on the actual Home Assistant installation or Roborock. HACS validation
+and hassfest in GitHub are still required after publishing.
