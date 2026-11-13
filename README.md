@@ -1,4 +1,13 @@
-# Dobby Scheduler 0.1.9
+# Dobby Scheduler 0.2.0
+
+## 0.2.0: no blocking errors
+
+Nothing in Dobby needs clicking OK any more. Dobby's own problems are logged and
+cleared automatically: the robot docks, the room stays pending and the queue
+carries on. A room that fails three times in a day is skipped until it is
+requested again. Dobby pauses only while the Roborock itself reports a vacuum or
+dock error, and carries on as soon as the vacuum clears it. See
+[UPGRADE_0.2.0.md](UPGRADE_0.2.0.md).
 
 
 ## 0.1.9: Self-check of transient APP_CHARGE docking errors

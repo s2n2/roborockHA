@@ -555,7 +555,9 @@ this record through its coordinator. Any incompatible layout fails closed.
              "vacuum": state.state if state else "unknown", "connected": bool(state and state.state not in ("unknown", "unavailable")),
              "mode": mode_state.state if mode_state else "unknown", "mode_options": list(mode_state.attributes.get("options", [])) if mode_state else [],
              "battery": battery, "error": error_value(self.raw(c["error_entity"])),
+             "error_raw": self.raw(c["error_entity"]),
              "dock_error": dock_error,
+             "dock_error_raw": self.raw(dock_error_entity) if dock_error_entity else None,
              "map_name": map_name, "map_flag": flag,
              "emptying": self.boolean(c["empty_entity"], absent=None),
              "washing": self.boolean(c["wash_entity"], absent=False),
@@ -586,11 +588,15 @@ this record through its coordinator. Any incompatible layout fails closed.
                         self.publish()
                         break
         except Exception as err:
-            _LOGGER.exception("Dobby scheduler paused after an internal error")
-            self.engine.fault_effect("scheduler", str(err), time.time())
-            self.engine.enabled = False
-            await self.persist()
-            self.publish()
+            # Dobby-level: log it and carry on. Never disable the schedule or
+            # leave anything for a user to acknowledge.
+            _LOGGER.exception("Dobby scheduler hit an internal error; it will carry on")
+            try:
+                self.engine.fault_effect("scheduler", str(err), time.time())
+                await self.persist()
+                self.publish()
+            except Exception:  # pragma: no cover - never let error handling raise
+                _LOGGER.exception("Dobby could not record an internal error")
         finally:
             self.tick_pending = False
 
@@ -654,7 +660,7 @@ this record through its coordinator. Any incompatible layout fails closed.
                "immediate_rooms": [self.rooms.get(j["area_id"], {}).get("name", j["area_id"])
                                    for j in self.engine.immediate_jobs()],
                "active": deepcopy(self.engine.active), "reason": self.engine.wait_reason,
-               "fault": self.engine.fault, "day": self.engine.day, "jobs": jobs,
+               "fault": self.engine.fault, "issue": self.engine.issue, "day": self.engine.day, "jobs": jobs,
                "vacuum_on_water_problem": self.settings["vacuum_on_water_problem"],
                "rooms": list(self.rooms.values()), "maps": self.maps, "maps_at": self.maps_at,
                "telemetry": self.last_telemetry, "backend": self.backend_detail,
@@ -887,7 +893,7 @@ this record through its coordinator. Any incompatible layout fails closed.
                 if not self.engine.active and self.raw(self.settings["vacuum_entity"]) not in ("unknown", "unavailable", "docked"):
                     await self.execute({"kind": "dock"})
             elif action == "retry":
-                self.engine.retry(now, self.raw(self.settings["vacuum_entity"]) == "docked")
+                self.engine.retry(now)  # Retired: errors clear automatically.
             elif action == "complete":
                 self.engine.manual_complete(p.get("uid"), now, self.raw(self.settings["vacuum_entity"]) == "docked")
             elif action == "update_note":

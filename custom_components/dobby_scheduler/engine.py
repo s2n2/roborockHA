@@ -12,6 +12,12 @@ import math
 import uuid
 
 MODES = {"vacuum", "vac_and_mop", "mop"}
+# Dobby-level problems never latch. The room stays pending and the queue carries
+# on after a short pause; a room that keeps failing is skipped for the rest of
+# the day (or until it is requested again) so one bad room cannot loop all night.
+RETRY_DELAY = 120
+MAX_ATTEMPTS = 3
+UNREPORTED = {"", "unknown", "unavailable", "none", "null"}
 DEFAULTS = {
     "vacuum_entity": "", "presence_entity": "", "mode_entity": "",
     "battery_entity": "", "error_entity": "", "map_entity": "",
@@ -144,7 +150,12 @@ class Engine:
         self.active = d.get("active")
         self.enabled = bool(d.get("enabled", False))
         self.day = d.get("day", "")
-        self.fault = d.get("fault", "")
+        # ``fault`` mirrors the Roborock's own error/dock-error reading and is
+        # recomputed on every tick. It is deliberately NOT restored, so faults
+        # saved by older versions (which needed Retry) clear on upgrade.
+        self.fault = ""
+        # Most recent Dobby-level problem: informational only, never blocking.
+        self.issue = d.get("issue") or None
         self.log = d.get("log", [])[-60:]
         self.manual = False  # Never restore permission to run in an occupied house.
         self.allow_home = False
@@ -155,9 +166,6 @@ class Engine:
         self.reset_deferred = False
         self.wait_reason = "Disabled"
         self.last_effects = []
-        # Runtime-only debounce: a transient docking RPC failure is not proof of
-        # dock readiness. Require two settled observations before reconsidering it.
-        self._recoverable_dock_since = None
         if self.active:
             self.active.update(phase="aborting", interrupted=True,
                                reason="Home Assistant restarted; room remains pending",
@@ -166,7 +174,7 @@ class Engine:
     def export(self):
         return deepcopy({"jobs": self.jobs, "active": self.active,
                          "enabled": self.enabled, "day": self.day,
-                         "fault": self.fault, "log": self.log[-60:]})
+                         "issue": self.issue, "log": self.log[-60:]})
 
     def note(self, text, now):
         self.log.append({"at": now, "message": str(text)[:500]})
@@ -195,6 +203,7 @@ class Engine:
         if self.active and self.active["uid"] == uid:
             return
         self.gesture_requests[uid] = now
+        job.pop("failed_attempts", None)
         self.jobs.remove(job)
         self.jobs.insert(0, job)
         self._order_immediate()
@@ -220,10 +229,9 @@ class Engine:
             for key in ("requested_mode", "executed_mode", "mopping_skipped",
                         "fallback_reason", "result", "force_vacuum_reason"):
                 j.pop(key, None)
-        # A fresh explicit request is a new opportunity; a repeated command
-        # failure within the same attempt will still require manual checking.
+        # A fresh explicit request is a new opportunity for a skipped room.
         if not self.active or self.active["uid"] != j["uid"]:
-            j.pop("dock_auto_retry_used", None)
+            j.pop("failed_attempts", None)
         if urgent and (not self.active or self.active["uid"] != j["uid"]):
             self.jobs.remove(j)
             self.jobs.insert(0, j)
@@ -265,108 +273,78 @@ class Engine:
         self.note("Restored daily rooms and default order", now)
         return True
 
-    def abort(self, reason, now, latch=False, keep_immediate=False):
-        if latch:
-            self.fault = reason
+    def abort(self, reason, now, failed=False, keep_immediate=False):
+        """Send the active job home; its room stays pending.
+
+        ``failed`` marks a Dobby-level problem: it is logged and counted against
+        the room, but never latches. Nothing here needs a user to press OK.
+        """
+        if failed:
+            self.report_issue(reason, now)
         if self.active and self.active["phase"] != "aborting":
             self.active.update(phase="aborting", interrupted=True, reason=reason,
                                dock_issued=0, dock_attempts=0)
-            self.note(reason, now)
+            if failed:
+                self.active["failed"] = True
+            else:
+                self.note(reason, now)
         self.manual = self.allow_home = False
         if not keep_immediate:
             self.clear_immediate()
 
+    def report_issue(self, message, now):
+        """Log a Dobby-level problem. It clears itself; it never blocks a run."""
+        message = str(message)[:500]
+        if not (self.issue and self.issue.get("message") == message
+                and now - self.issue.get("at", 0) < RETRY_DELAY):
+            self.note(message, now)
+        self.issue = {"at": now, "message": message}
+
     def fault_effect(self, effect, error, now):
-        self.fault = f"{effect}: {error}"
-        self.note(self.fault, now)
-        if self.active:
-            self.active["reason"] = self.fault
-            self.active["command_uncertain"] = True
-        # A failed service is not automatically retried: the robot may have received it.
+        """A failed command or check: log it, dock, keep the room pending.
 
-    def _recover_transient_dock_fault(self, t, cfg, rooms, local_now):
-        """Retry an APP_CHARGE *transport-command* failure, never a robot fault.
-
-        This is a one-time, on-demand reconciliation, not a blanket error reset.
-        A failed docking command may have reached the robot despite HA reporting
-        a failure. We therefore require a settled, independently observed dock,
-        no physical errors/service activity, and a job that is permitted to run
-        NOW. Active jobs retain their clean-proof state if already verified;
-        unproved jobs stay pending to be cleaned again from the beginning.
+        A proved clean is kept: only the dock/empty confirmation was missed, so
+        the room is completed rather than cleaned again.
         """
-        fault = self.fault
-        if not (fault.startswith("dock: ") and "APP_CHARGE" in fault.upper()):
-            self._recoverable_dock_since = None
-            return False
+        message = f"{effect}: {error}"
         a = self.active
-        if a and a.get("phase") == "aborting":
-            self._recoverable_dock_since = None
-            return False
-        self._order_immediate()
-        j = (self.find(a["uid"]) if a else
-             next((row for row in self.jobs if row["status"] == "needs_action"), None))
-        if not j or j.get("status") != "needs_action" or j.get("dock_auto_retry_used"):
-            self._recoverable_dock_since = None
-            return False
-        immediate = self.is_immediate(j["uid"])
-        home = t.get("home")
-        if (not (self.enabled or self.manual or immediate)
-                or (not immediate and not in_window(local_now, cfg["window_start"], cfg["window_end"]))
-                or home is None or (home and not (self.allow_home or immediate))
-                or (not (self.manual or immediate) and
-                    (self.away_since is None or
-                     t["now"] - self.away_since < cfg["away_minutes"] * 60))):
-            self._recoverable_dock_since = None
-            return False
-        # These are observations, not an inference from the command exception.
-        if (not t.get("connected") or t.get("vacuum") != "docked"
-                or t.get("error") != "ok" or t.get("dock_error") != "ok"
-                or t.get("blockers") or t.get("legacy")
-                or t.get("emptying") is not False
-                or t.get("washing") is not False):
-            self._recoverable_dock_since = None
-            return False
-        # Full preflight prevents clearing the error merely to expose a different
-        # unsafe start condition. For an existing owned job, the same room/map is
-        # checked but completion proof is preserved by retry() when present.
-        r = rooms.get(j["area_id"])
-        if self._preflight(t, cfg, r, j):
-            self._recoverable_dock_since = None
-            return False
-        if a and (a.get("map_name") != t.get("map_name") or
-                  a.get("interrupted") and a.get("proved")):
-            self._recoverable_dock_since = None
-            return False
-        now = t["now"]
-        if self._recoverable_dock_since is None:
-            self._recoverable_dock_since = now
-            self.wait_reason = "Checking dock before automatically retrying"
-            return False
-        self.wait_reason = "Checking dock before automatically retrying"
-        if now - self._recoverable_dock_since < cfg["dock_settle"]:
-            return False
-        # Persist the retry limit as part of the job, so restarting HA cannot
-        # cause endless replays of a repeatedly rejected dock command.
-        j["dock_auto_retry_used"] = True
-        self.retry(now, docked=True)
-        self.note("Automatically cleared transient APP_CHARGE error after safe dock verification", now)
-        self._recoverable_dock_since = None
-        return True
+        if a and a.get("proved") and a["phase"] != "aborting":
+            self.report_issue(message, now)
+            self._complete(now, note=f"{effect} not confirmed")
+            return
+        self.abort(message, now, failed=True, keep_immediate=True)
 
-    def retry(self, now, docked):
-        if not docked:
-            raise ValueError("Dock Dobby before retrying")
-        self.fault = ""
-        a = self.active
-        if a and a.get("proved") and not a.get("interrupted"):
-            a.update(phase="verifying", docked_since=now, phase_at=now,
-                     empty_seen=False, empty_finished=False, command_uncertain=False)
-        elif a:
-            j = self.find(a["uid"])
-            if j:
-                j["reason"] = "Retry requested"
-            self.active = None
-        self.note("Retry authorised", now)
+    @staticmethod
+    def runnable(job):
+        return (job["status"] == "needs_action"
+                and job.get("failed_attempts", 0) < MAX_ATTEMPTS)
+
+    @staticmethod
+    def roborock_error(t):
+        """The vacuum's own reported error, or "" when it reports none.
+
+        Only a real reported value counts; an unavailable/unknown sensor is a
+        reading problem that pre-flight waits on, not a Roborock fault.
+        """
+        for key, label in (("error", "vacuum error"), ("dock_error", "dock error")):
+            if t.get(key, "ok") == "ok":
+                continue
+            raw = t.get(key + "_raw")
+            if raw is None:
+                return f"Roborock reports a {label}"
+            if str(raw).strip().casefold() not in UNREPORTED:
+                return f"Roborock reports a {label}: {raw}"
+        return ""
+
+    def retry(self, now, docked=True):
+        """Retired: errors clear automatically. Kept so old cards/automations work.
+
+        Clears the informational notice and gives skipped rooms another chance.
+        """
+        self.issue = None
+        for job in self.jobs:
+            job.pop("failed_attempts", None)
+        self.note("Skipped rooms given another chance", now)
 
     def manual_complete(self, uid, now, docked):
         if not docked:
@@ -387,7 +365,6 @@ class Engine:
         self.gesture_requests.pop(uid, None)
         if a:
             self.active = None
-            self.fault = ""
         self.note("User manually marked a room complete", now)
 
     @staticmethod
@@ -491,8 +468,10 @@ class Engine:
         day = cleaning_day(local_now, cfg["reset_time"])
         if day != self.day:
             self.reset(day, rooms, now)
-        if self.fault:
-            self._recover_transient_dock_fault(t, cfg, rooms, local_now)
+        fault = self.roborock_error(t)
+        if fault != self.fault:
+            self.note(fault or "Roborock error cleared; carrying on", now)
+            self.fault = fault
         if self.active:
             a = self.active
             immediate = self.is_immediate(a["uid"])
@@ -536,7 +515,7 @@ class Engine:
                         and (not cfg.get("empty_entity") or t.get("emptying") is False)
                         and (not cfg.get("wash_entity") or t.get("washing") is False)
                         and not t.get("emptying") and not t.get("washing"))
-                    if dock_ready and a.get("dock_attempts") and not self.fault:
+                    if dock_ready and a.get("dock_attempts"):
                         a.setdefault("fallback_docked_since", now)
                         if now - a["fallback_docked_since"] < cfg["dock_settle"]:
                             return []
@@ -548,24 +527,33 @@ class Engine:
                     j = self.find(a["uid"])
                     if j:
                         j["reason"] = a["reason"]
+                        if a.get("failed"):
+                            j["failed_attempts"] = j.get("failed_attempts", 0) + 1
+                            if not self.runnable(j):
+                                j["reason"] = (f"Skipped after {MAX_ATTEMPTS} failed attempts "
+                                               f"(last: {a['reason']}). Request it again to retry.")
+                                self.gesture_requests.pop(j["uid"], None)
                     self.active = None
                 elif t.get("connected") and t.get("vacuum") != "docked" and now - a.get("dock_issued", 0) >= 30 and a.get("dock_attempts", 0) < 3:
                     a["dock_issued"] = now
                     a["dock_attempts"] = a.get("dock_attempts", 0) + 1
                     effects.append({"kind": "dock"})
                 return effects
-            if self.fault:
-                self.wait_reason = self.fault
-                return []
             if not t.get("connected"):
                 a.setdefault("lost_since", now)
                 self.wait_reason = "Waiting for connection; completion is not assumed"
                 if now - a["lost_since"] > cfg["dock_timeout"]:
-                    self.abort("Connection lost too long; room pending", now, latch=True)
+                    self.abort("Connection lost too long; room pending", now, failed=True)
                 return []
             a.pop("lost_since", None)
-            if t.get("error") != "ok":
-                self.abort("Vacuum error or error reading unavailable", now, latch=True)
+            if t.get("error") != "ok" or self.fault:
+                # Roborock-level: pause until the vacuum clears it; not a Dobby failure.
+                if a.get("proved") and t.get("vacuum") == "docked":
+                    # The clean itself was confirmed; don't repeat the room.
+                    self._complete(now, note="dock service interrupted by a Roborock error")
+                    return []
+                self.abort(self.fault or "Vacuum error reading unavailable; room pending", now,
+                           keep_immediate=True)
                 return []
             # A tank can become empty just AFTER a successful wet clean. Accept
             # the usual proof first, then finish its normal dock/empty sequence.
@@ -604,7 +592,7 @@ class Engine:
                     self.manual, self.allow_home = manual, allow_home
                     self.gesture_requests = gesture_requests
                 else:
-                    self.abort("Water system needs attention", now, latch=True)
+                    self.abort("Water system needs attention; room pending", now, keep_immediate=True)
                 return []
             if a["phase"] == "preparing":
                 self.wait_reason = "Setting cleaning mode"
@@ -656,10 +644,10 @@ class Engine:
             if a["phase"] in ("starting", "cleaning", "verifying"):
                 self.wait_reason = "Cleaning " + a["name"]
                 if a["phase"] == "starting" and now - a["command_at"] > cfg["start_timeout"]:
-                    self.abort("Dobby never confirmed cleaning; check the command/map", now, latch=True)
+                    self.abort("Dobby never confirmed cleaning; room pending", now, failed=True, keep_immediate=True)
                     return []
                 if now - a["command_at"] > cfg["room_timeout"]:
-                    self.abort("Room time limit reached", now, latch=True)
+                    self.abort("Room time limit reached; room pending", now, failed=True, keep_immediate=True)
                     return []
                 if t.get("vacuum") == "docked" and a.get("seen_cleaning"):
                     if t.get("washing") is True and not a.get("proved"):
@@ -676,7 +664,7 @@ class Engine:
                                     j["reason"] = "Incomplete low-battery run; retry after charging"
                                 self.active = None
                             else:
-                                self.fault_effect("completion", "Docked without a confirmed successful clean. Retry or manually confirm after checking.", now)
+                                self.fault_effect("completion", "Docked without a confirmed successful clean; room pending", now)
                         return []
                     if t.get("washing") is None:
                         self.wait_reason = "Mop-wash state unavailable"
@@ -696,20 +684,23 @@ class Engine:
             if a["phase"] == "emptying":
                 self.wait_reason = "Emptying dustbin"
                 if t.get("vacuum") != "docked":
-                    self.abort("Dobby left the dock before emptying finished", now, latch=True)
+                    self.fault_effect("empty", "Dobby left the dock before emptying finished", now)
                 elif a.get("empty_finished") and t.get("emptying") is False and t.get("washing") is False:
                     self._complete(now)
                 elif now - a["phase_at"] > cfg["empty_timeout"]:
-                    self.fault_effect("empty", "No observed dust-emptying on/off cycle. Check DND and the dock, then Retry.", now)
+                    self.fault_effect("empty", "No observed dust-emptying on/off cycle (check DND)", now)
                 return []
             return []
         if self.fault:
-            self.wait_reason = self.fault
+            self.wait_reason = self.fault + " - waiting for it to clear"
+            return []
+        if self.issue and now - self.issue.get("at", 0) < RETRY_DELAY:
+            self.wait_reason = "Carrying on shortly after: " + self.issue["message"]
             return []
         # Select request-only work BEFORE applying the automatic-schedule gates.
         # Permission is per job, not self.manual/allow_home for the whole queue.
         self._order_immediate()
-        j = next((j for j in self.jobs if j["status"] == "needs_action"), None)
+        j = next((j for j in self.jobs if self.runnable(j)), None)
         immediate = bool(j and self.is_immediate(j["uid"]))
         if not (self.enabled or self.manual or immediate):
             self.wait_reason = "Scheduler disabled"
@@ -728,7 +719,9 @@ class Engine:
             return []
         if not j:
             self.manual = self.allow_home = False
-            self.wait_reason = "Today's queue is complete"
+            skipped = sum(1 for row in self.jobs if row["status"] == "needs_action")
+            self.wait_reason = (f"{skipped} room(s) skipped after repeated problems; request again to retry"
+                                if skipped else "Today's queue is complete")
             return []
         r = rooms.get(j["area_id"])
         error = self._preflight(t, cfg, r, j)
@@ -745,16 +738,18 @@ class Engine:
                        "command_at": None, "seen_cleaning": False, "proved": False,
                        "interrupted": False, "empty_seen": False, "empty_finished": False,
                        "start_timeout": cfg["start_timeout"]}
+        self.issue = None
         self.note(f"Starting {r['name']} ({mode})" + ("; " + fallback if fallback else ""), now)
         self.wait_reason = "Setting vacuum-only fallback" if fallback else "Setting cleaning mode"
         return [{"kind": "set_mode", "option": mode}]
 
-    def _complete(self, now):
+    def _complete(self, now, note=""):
         a = self.active
         j = self.find(a["uid"])
         skipped = bool(a.get("water_fallback"))
         if j:
-            reason = "Successful clean record + dock + required emptying confirmed"
+            reason = ("Successful clean record confirmed; " + note if note else
+                      "Successful clean record + dock + required emptying confirmed")
             if skipped:
                 reason = "Vacuumed only; mopping skipped because the water tank needs attention. " + reason
             j.update(status="completed", completed_at=now, reason=reason,
@@ -763,6 +758,7 @@ class Engine:
                      fallback_reason=a.get("fallback_reason", ""),
                      result="vacuum_only_water_fallback" if skipped else "completed")
             j.pop("force_vacuum_reason", None)
+            j.pop("failed_attempts", None)
         self.gesture_requests.pop(a["uid"], None)
         self.note("Completed " + a["name"] + (" - vacuumed only, mopping skipped" if skipped else ""), now)
         self.active = None
